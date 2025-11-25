@@ -2024,7 +2024,7 @@ const DataEntryModule: React.FC<DataEntryProps> = ({ setModule, onOpenSetup, use
                 );
             case 'production': return <ProductionForm showNotification={showNotification} requestSetupItem={() => onOpenSetup('items')} userProfile={userProfile} />;
             case 'purchases': return <PurchasesModule showNotification={showNotification} userProfile={userProfile} onOpenSetup={onOpenSetup} />;
-            case 'sales': return <SalesInvoiceModule setModule={setModule} userProfile={userProfile} />;
+            case 'sales': return <SalesInvoiceModule setModule={setModule} userProfile={userProfile} onOpenSetup={onOpenSetup} />;
             case 'ongoing': return <OngoingOrdersModule setModule={setModule} userProfile={userProfile} />;
             case 'rebaling': return <RebalingForm showNotification={showNotification} userProfile={userProfile} />;
             case 'directSales': return <DirectSalesForm showNotification={showNotification} userProfile={userProfile} />;

@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useData, auth, db, allPermissions, dataEntrySubModules, mainModules } from '../context/DataContext.tsx';
 import { Module, UserProfile, AppState, PackingType, Production, JournalEntry, SalesInvoice, InvoiceItem, Currency, OriginalPurchased } from '../types.ts';
@@ -5,8 +6,7 @@ import { reportStructure } from './ReportsModule.tsx';
 import Modal from './ui/Modal.tsx';
 import EntitySelector from './ui/EntitySelector.tsx';
 
-// ... (UserManager, UserEditModal, PurchaseRateCorrector, ManualEditManager, EditModal remain unchanged) ...
-
+// ... (UserManager, UserEditModal remain unchanged) ...
 const UserManager: React.FC<{ setNotification: (n: any) => void; }> = ({ setNotification }) => {
     const [users, setUsers] = useState<UserProfile[]>([]);
     const [isModalOpen, setIsModalOpen] = useState(false);
@@ -224,9 +224,9 @@ const PurchaseRateCorrector: React.FC<{ setNotification: (n: any) => void }> = (
 
     return (
         <div className="bg-white p-6 rounded-lg shadow-md border border-orange-200 mt-6">
-            <h2 className="text-2xl font-bold text-orange-700 mb-2">Original Stock Rate Corrector</h2>
+            <h2 className="text-2xl font-bold text-orange-700 mb-2">Single Purchase Rate Corrector</h2>
             <p className="text-sm text-slate-600 mb-4">
-                Use this tool to fix "2 decimal" rounding errors. Enter the <strong>Actual Total Invoice Amount</strong>, and the system will recalculate the rate with high precision (up to 10 decimals) and update the accounting journal.
+                Use this tool to fix "2 decimal" rounding errors for a <strong>single</strong> purchase. Enter the <strong>Actual Total Invoice Amount</strong>, and the system will recalculate the rate with high precision (up to 10 decimals) and update the accounting journal.
             </p>
             
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
@@ -823,6 +823,260 @@ const BulkPriceUpdateModal: React.FC<{ isOpen: boolean; onClose: () => void; set
     );
 };
 
+const BulkOriginalStockRateUpdateModal: React.FC<{ isOpen: boolean; onClose: () => void; setNotification: (n: any) => void }> = ({ isOpen, onClose, setNotification }) => {
+    const { state, dispatch } = useData();
+    const [parsedData, setParsedData] = useState<{ validUpdates: any[], errors: any[] } | null>(null);
+    const [isProcessing, setIsProcessing] = useState(false);
+    const fileInputRef = useRef<HTMLInputElement>(null);
+
+    const downloadTemplate = () => {
+        const headers = "Purchase ID,Date,Supplier,Batch Number,Original Type,Quantity,Current Rate,New Rate";
+        const rows = state.originalPurchases.map(p => {
+            const supplierName = state.suppliers.find(s => s.id === p.supplierId)?.name || p.supplierId;
+            const originalType = state.originalTypes.find(ot => ot.id === p.originalTypeId)?.name || p.originalTypeId;
+            
+            // Escape commas for CSV
+            const safeSupplier = `"${supplierName.replace(/"/g, '""')}"`;
+            const safeType = `"${originalType.replace(/"/g, '""')}"`;
+            
+            return `${p.id},${p.date},${safeSupplier},${p.batchNumber},${safeType},${p.quantityPurchased},${p.rate},`;
+        }).join('\n');
+
+        const csvContent = headers + "\n" + rows;
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.setAttribute("href", url);
+        link.setAttribute("download", `OriginalStock_RateUpdate_Template_${new Date().toISOString().split('T')[0]}.csv`);
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    };
+
+    const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const uploadedFile = e.target.files?.[0];
+        if (!uploadedFile) return;
+        setIsProcessing(true);
+
+        const reader = new FileReader();
+        reader.onload = (event) => {
+            const text = event.target?.result as string;
+            const rows = text.split(/\r\n|\n/).filter(row => row.trim() !== '');
+            
+            const headerRow = rows.shift();
+            if (!headerRow) {
+                 setNotification({ msg: "File is empty.", type: 'error' });
+                 setIsProcessing(false);
+                 return;
+            }
+
+            const headers = headerRow.split(',').map(h => h.trim().toLowerCase().replace(/"/g, ''));
+            
+            const idIndex = headers.findIndex(h => h === 'purchase id');
+            const newRateIndex = headers.findIndex(h => h === 'new rate');
+
+            if (idIndex === -1 || newRateIndex === -1) {
+                setNotification({ msg: "Invalid CSV headers. Required: 'Purchase ID' and 'New Rate'.", type: 'error' });
+                setIsProcessing(false);
+                return;
+            }
+
+            const validUpdates: any[] = [];
+            const errors: any[] = [];
+
+            rows.forEach((row, index) => {
+                const cols = row.split(',').map(c => c.trim().replace(/"/g, ''));
+                const purchaseId = cols[idIndex];
+                const newRateStr = cols[newRateIndex];
+                const newRate = newRateStr ? parseFloat(newRateStr) : NaN;
+
+                if (!purchaseId) return;
+
+                const purchase = state.originalPurchases.find(p => p.id === purchaseId);
+
+                if (!purchase) {
+                    errors.push({ row: index + 2, message: `Purchase ID '${purchaseId}' not found.` });
+                } else if (isNaN(newRate) || newRate <= 0) {
+                    // Skip if new rate is empty or invalid
+                    // errors.push({ row: index + 2, message: `Invalid or missing rate for '${purchaseId}'.` });
+                } else {
+                    if (newRate !== purchase.rate) {
+                        validUpdates.push({
+                            id: purchaseId,
+                            date: purchase.date,
+                            supplier: state.suppliers.find(s => s.id === purchase.supplierId)?.name,
+                            oldRate: purchase.rate,
+                            newRate: newRate,
+                            purchaseData: purchase
+                        });
+                    }
+                }
+            });
+
+            setParsedData({ validUpdates, errors });
+            setIsProcessing(false);
+        };
+        reader.readAsText(uploadedFile);
+    };
+
+    const applyUpdates = () => {
+        if (!parsedData?.validUpdates.length) return;
+
+        const batchActions: any[] = [];
+
+        parsedData.validUpdates.forEach(update => {
+            const purchase = update.purchaseData as OriginalPurchased;
+            const newRate = update.newRate;
+
+            // 1. Update Purchase Record
+            batchActions.push({
+                type: 'UPDATE_ENTITY',
+                payload: {
+                    entity: 'originalPurchases',
+                    data: { id: purchase.id, rate: newRate }
+                }
+            });
+
+            // 2. Recalculate new USD total
+            // Formula: (qty * rate) * conversion + surcharge
+            const newTotalUSD = (purchase.quantityPurchased * newRate * (purchase.conversionRate || 1)) + (purchase.discountSurcharge || 0);
+
+            // 3. Find associated Journal Entries
+            // Search for both standard and import-style IDs
+            const potentialIds = [
+                `je-d-${purchase.id}`, `je-c-${purchase.id}`, // Standard
+                `je-d-import-${purchase.id}`, `je-c-import-${purchase.id}` // Import
+            ];
+
+            const relatedJEs = state.journalEntries.filter(je => potentialIds.includes(je.id));
+
+            relatedJEs.forEach(je => {
+                const updatedJE = { ...je };
+                if (je.debit > 0) updatedJE.debit = newTotalUSD;
+                if (je.credit > 0) updatedJE.credit = newTotalUSD;
+                
+                // Update original foreign currency amount if it exists
+                if (updatedJE.originalAmount) {
+                    // Original amount is (qty * rate)
+                    updatedJE.originalAmount = { ...updatedJE.originalAmount, amount: purchase.quantityPurchased * newRate };
+                }
+
+                batchActions.push({
+                    type: 'UPDATE_ENTITY',
+                    payload: { entity: 'journalEntries', data: updatedJE }
+                });
+            });
+        });
+
+        if (batchActions.length > 0) {
+            dispatch({ type: 'BATCH_UPDATE', payload: batchActions });
+            setNotification({ msg: `Successfully updated rates for ${parsedData.validUpdates.length} purchase records and corrected related journal entries.`, type: 'success' });
+            onClose();
+        } else {
+            setNotification({ msg: "No updates to apply.", type: 'error' });
+        }
+    };
+
+    const reset = () => {
+        setParsedData(null);
+        if (fileInputRef.current) fileInputRef.current.value = '';
+    };
+
+    return (
+        <Modal isOpen={isOpen} onClose={onClose} title="Bulk Update Original Stock Rates" size="4xl">
+            <div className="space-y-6">
+                {!parsedData ? (
+                    <>
+                        <div className="bg-blue-50 border border-blue-200 p-4 rounded-md text-sm text-blue-800">
+                             <p className="font-semibold mb-1">Instructions:</p>
+                             <ol className="list-decimal list-inside space-y-1">
+                                 <li>Download the template containing your current Original Stock Purchase records.</li>
+                                 <li>Open it in Excel/Sheets.</li>
+                                 <li>Fill in the <strong>New Rate</strong> column for the records you want to update. Leave others blank.</li>
+                                 <li>Save as CSV and upload it here.</li>
+                                 <li>This will update the purchase rate and automatically correct the associated journal entries.</li>
+                             </ol>
+                        </div>
+                        <div>
+                             <button onClick={downloadTemplate} className="flex items-center space-x-2 text-blue-600 hover:underline font-semibold">
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+                                <span>Download Stock Template</span>
+                            </button>
+                        </div>
+                        <div className="border-t pt-4">
+                            <label className="block text-sm font-medium text-slate-700 mb-2">Upload Updated CSV</label>
+                            <input 
+                                ref={fileInputRef}
+                                type="file" 
+                                accept=".csv" 
+                                onChange={handleFileChange} 
+                                disabled={isProcessing}
+                                className="block w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
+                            />
+                            {isProcessing && <p className="text-sm text-slate-500 mt-2">Processing file...</p>}
+                        </div>
+                    </>
+                ) : (
+                    <div className="space-y-4">
+                        <div className="flex justify-between items-center">
+                             <h3 className="text-lg font-semibold text-slate-800">Preview Changes</h3>
+                             <button onClick={reset} className="text-sm text-blue-600 hover:underline">Upload Different File</button>
+                        </div>
+                        
+                        {parsedData.errors.length > 0 && (
+                            <div className="bg-red-50 border border-red-200 p-3 rounded-md max-h-32 overflow-y-auto">
+                                <p className="text-red-800 font-semibold text-sm mb-1">Errors ({parsedData.errors.length})</p>
+                                <ul className="list-disc list-inside text-xs text-red-700">
+                                    {parsedData.errors.map((err, i) => <li key={i}>Row {err.row}: {err.message}</li>)}
+                                </ul>
+                            </div>
+                        )}
+
+                        <div className="border rounded-md max-h-96 overflow-y-auto">
+                            <table className="w-full text-left table-auto text-sm">
+                                <thead className="bg-slate-100 sticky top-0">
+                                    <tr>
+                                        <th className="p-2 font-semibold border-b">Purchase ID</th>
+                                        <th className="p-2 font-semibold border-b">Date</th>
+                                        <th className="p-2 font-semibold border-b">Supplier</th>
+                                        <th className="p-2 font-semibold border-b text-right">Old Rate</th>
+                                        <th className="p-2 font-semibold border-b text-right">New Rate</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {parsedData.validUpdates.map((u, i) => (
+                                        <tr key={i} className="border-b hover:bg-slate-50">
+                                            <td className="p-2 font-mono text-xs">{u.id}</td>
+                                            <td className="p-2">{u.date}</td>
+                                            <td className="p-2">{u.supplier}</td>
+                                            <td className="p-2 text-right text-slate-500">{u.oldRate}</td>
+                                            <td className="p-2 text-right font-bold text-blue-600">{u.newRate}</td>
+                                        </tr>
+                                    ))}
+                                    {parsedData.validUpdates.length === 0 && (
+                                         <tr><td colSpan={5} className="p-4 text-center text-slate-500">No rate changes detected in the uploaded file.</td></tr>
+                                    )}
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <div className="flex justify-end gap-3 pt-4 border-t">
+                            <button onClick={onClose} className="px-4 py-2 bg-slate-200 text-slate-800 rounded-md hover:bg-slate-300">Cancel</button>
+                            <button 
+                                onClick={applyUpdates} 
+                                disabled={parsedData.validUpdates.length === 0} 
+                                className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:bg-green-300"
+                            >
+                                Apply {parsedData.validUpdates.length} Updates
+                            </button>
+                        </div>
+                    </div>
+                )}
+            </div>
+        </Modal>
+    );
+};
+
 const DataCorrectionManager: React.FC<{ setNotification: (n: any) => void; }> = ({ setNotification }) => {
     const { state, dispatch } = useData();
     const [isConfirmModalOpen, setIsConfirmModalOpen] = useState(false);
@@ -832,6 +1086,7 @@ const DataCorrectionManager: React.FC<{ setNotification: (n: any) => void; }> = 
     const [isKgToPackageConfirmOpen, setIsKgToPackageConfirmOpen] = useState(false);
     const [isAuditModalOpen, setIsAuditModalOpen] = useState(false);
     const [isBulkUpdateModalOpen, setIsBulkUpdateModalOpen] = useState(false);
+    const [isBulkOriginalRateModalOpen, setIsBulkOriginalRateModalOpen] = useState(false);
 
     // New state for date-specific deletions
     const [productionDeleteDate, setProductionDeleteDate] = useState('');
@@ -1135,14 +1390,18 @@ const DataCorrectionManager: React.FC<{ setNotification: (n: any) => void; }> = 
             <div className="mb-8 p-4 bg-blue-50 rounded-lg border border-blue-100">
                 <h3 className="text-lg font-semibold text-blue-800 mb-2">Data Verification & Updates</h3>
                 <p className="text-sm text-slate-600 mb-3">Tools for verifying and mass-updating item data.</p>
-                <div className="flex space-x-4">
+                <div className="flex flex-wrap gap-4">
                     <button onClick={() => setIsAuditModalOpen(true)} className="px-4 py-2 bg-white text-blue-700 border border-blue-300 rounded-md hover:bg-blue-50 text-sm font-semibold flex items-center gap-2">
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002 2M9 5a2 2 0 012-2h2a2 2 0 012 2" /></svg>
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 012-2h2a2 2 0 012 2" /></svg>
                         View Price List
                     </button>
                     <button onClick={() => setIsBulkUpdateModalOpen(true)} className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 text-sm font-semibold flex items-center gap-2">
                         <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" /></svg>
                         Bulk Price Update (CSV)
+                    </button>
+                    <button onClick={() => setIsBulkOriginalRateModalOpen(true)} className="px-4 py-2 bg-orange-600 text-white rounded-md hover:bg-orange-700 text-sm font-semibold flex items-center gap-2">
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 012-2h2a2 2 0 012 2" /></svg>
+                        Bulk Original Rate Update (CSV)
                     </button>
                 </div>
             </div>
@@ -1489,6 +1748,7 @@ const DataCorrectionManager: React.FC<{ setNotification: (n: any) => void; }> = 
             )}
              {isAuditModalOpen && <ItemPriceAuditorModal isOpen={isAuditModalOpen} onClose={() => setIsAuditModalOpen(false)} state={state} />}
              {isBulkUpdateModalOpen && <BulkPriceUpdateModal isOpen={isBulkUpdateModalOpen} onClose={() => setIsBulkUpdateModalOpen(false)} setNotification={setNotification} />}
+             {isBulkOriginalRateModalOpen && <BulkOriginalStockRateUpdateModal isOpen={isBulkOriginalRateModalOpen} onClose={() => setIsBulkOriginalRateModalOpen(false)} setNotification={setNotification} />}
         </div>
     );
 };

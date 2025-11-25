@@ -1,25 +1,13 @@
-
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useData } from '../context/DataContext.tsx';
 import { 
-    OriginalPurchased, FinishedGoodsPurchase, FinishedGoodsPurchaseItem, Supplier, OriginalType, 
-    Item, PackingType, Currency, JournalEntry, JournalEntryType, AppState, UserProfile 
+    OriginalPurchased, Currency, JournalEntry, JournalEntryType, UserProfile, AppState 
 } from '../types.ts';
-import { generateFinishedGoodsPurchaseId, generateOriginalPurchaseId } from '../utils/idGenerator.ts';
-import ItemSelector from './ui/ItemSelector.tsx';
+import { generateOriginalPurchaseId } from '../utils/idGenerator.ts';
 import CurrencyInput from './ui/CurrencyInput.tsx';
 import Modal from './ui/Modal.tsx';
 import EntitySelector from './ui/EntitySelector.tsx';
-
-// Define default rates for auto-population
-const defaultConversionRates: { [key: string]: number } = {
-    [Currency.AustralianDollar]: 0.66,
-    [Currency.Pound]: 1.34,
-    [Currency.AED]: 0.2724795640326975,
-    [Currency.SaudiRiyal]: 0.27,
-    [Currency.Euro]: 1.17,
-    [Currency.Dollar]: 1,
-};
+import StockLotPurchaseForm from './StockLotPurchaseForm.tsx'; 
 
 // --- Reusable Helper Components ---
 const CollapsibleSection: React.FC<{ title: string; children: React.ReactNode; defaultOpen?: boolean }> = ({ title, children, defaultOpen = false }) => {
@@ -54,21 +42,93 @@ const PurchasesModule: React.FC<PurchasesModuleProps> = ({ showNotification, use
     const [view, setView] = useState<PurchaseView>('original');
 
     const getButtonClass = (v: PurchaseView) => 
-        `px-4 py-2 rounded-md transition-colors text-sm font-medium ${view === v ? 'bg-blue-600 text-white' : 'bg-slate-200 text-slate-700 hover:bg-slate-300'} disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed`;
+        `px-4 py-2 rounded-md transition-colors text-sm font-medium ${view === v ? 'bg-blue-600 text-white' : 'bg-slate-200 text-slate-700 hover:bg-slate-300'}`;
     
     return (
         <div className="space-y-6">
             <div className="flex items-center space-x-2">
                 <h2 className="text-xl font-bold text-slate-700 mr-4">New Purchase</h2>
                 <button onClick={() => setView('original')} className={getButtonClass('original')}>Original Purchase</button>
-                <button onClick={() => setView('finishedGoods')} className={getButtonClass('finishedGoods')} disabled>Finished Goods</button>
+                <button onClick={() => setView('finishedGoods')} className={getButtonClass('finishedGoods')}>Finished Goods</button>
             </div>
 
             <div>
                 {view === 'original' && <OriginalPurchaseFormInternal showNotification={showNotification} userProfile={userProfile} onOpenSetup={onOpenSetup} />}
-                {view === 'finishedGoods' && <FinishedGoodsPurchaseFormInternal showNotification={showNotification} userProfile={userProfile} />}
+                {view === 'finishedGoods' && <StockLotPurchaseForm showNotification={showNotification} userProfile={userProfile} />}
             </div>
         </div>
+    );
+};
+
+const OriginalPurchaseSummaryModal: React.FC<{
+    isOpen: boolean;
+    onClose: () => void;
+    onSave: () => void;
+    purchase: OriginalPurchased;
+    state: AppState;
+    hasPrinted: boolean;
+    setHasPrinted: (p: boolean) => void;
+}> = ({ isOpen, onClose, onSave, purchase, state, hasPrinted, setHasPrinted }) => {
+    const handlePrint = () => { window.print(); setHasPrinted(true); };
+    const supplier = state.suppliers.find(s => s.id === purchase.supplierId);
+    const originalType = state.originalTypes.find(ot => ot.id === purchase.originalTypeId);
+
+    const itemValueUSD = (purchase.quantityPurchased * purchase.rate) * purchase.conversionRate;
+    const freightValueUSD = (purchase.freightAmount || 0) * (purchase.freightConversionRate || 1);
+    const clearingValueUSD = (purchase.clearingAmount || 0) * (purchase.clearingConversionRate || 1);
+    const commissionValueUSD = (purchase.commissionAmount || 0) * (purchase.commissionConversionRate || 1);
+    
+    const totalAdditionalCosts = freightValueUSD + clearingValueUSD + commissionValueUSD;
+    const grandTotalUSD = itemValueUSD + totalAdditionalCosts + (purchase.discountSurcharge || 0);
+
+    return (
+        <Modal isOpen={isOpen} onClose={onClose} title="Original Purchase Summary" size="4xl">
+            <div id="original-purchase-voucher-content" className="p-4 bg-white font-sans text-sm">
+                <h2 className="text-xl font-bold text-center text-slate-900">Original Purchase Voucher</h2>
+                <div className="grid grid-cols-2 gap-x-8 gap-y-1 mt-4 border-b pb-2 text-slate-700">
+                    <p><strong>Date:</strong> {purchase.date}</p>
+                    <p><strong>Supplier:</strong> {supplier?.name}</p>
+                    <p><strong>Batch No:</strong> {purchase.batchNumber}</p>
+                    <p><strong>Container No:</strong> {purchase.containerNumber || 'N/A'}</p>
+                </div>
+                <table className="w-full text-left my-4">
+                    <thead className="border-b"><tr className="bg-slate-50"><th className="p-1 font-semibold text-slate-800">Description</th><th className="p-1 font-semibold text-slate-800 text-right">Qty</th><th className="p-1 font-semibold text-slate-800 text-right">Rate ({purchase.currency})</th><th className="p-1 font-semibold text-slate-800 text-right">Total ({purchase.currency})</th></tr></thead>
+                    <tbody>
+                        <tr>
+                            <td className="p-1 text-slate-800">{originalType?.name}</td>
+                            <td className="p-1 text-right text-slate-800">{purchase.quantityPurchased.toLocaleString()}</td>
+                            <td className="p-1 text-right text-slate-800">{purchase.rate.toFixed(2)}</td>
+                            <td className="p-1 text-right text-slate-800">{(purchase.quantityPurchased * purchase.rate).toFixed(2)}</td>
+                        </tr>
+                    </tbody>
+                    <tfoot>
+                        <tr className="font-bold border-t"><td colSpan={3} className="p-1 text-right text-slate-800">Subtotal (USD)</td><td className="p-1 text-right text-slate-800">${itemValueUSD.toFixed(2)}</td></tr>
+                    </tfoot>
+                </table>
+                
+                <div className="mt-2 space-y-1 text-xs text-slate-700">
+                    {purchase.freightAmount && <div className="flex justify-between"><span>Freight</span><span>${freightValueUSD.toFixed(2)}</span></div>}
+                    {purchase.clearingAmount && <div className="flex justify-between"><span>Clearing</span><span>${clearingValueUSD.toFixed(2)}</span></div>}
+                    {purchase.commissionAmount && <div className="flex justify-between"><span>Commission</span><span>${commissionValueUSD.toFixed(2)}</span></div>}
+                    {purchase.discountSurcharge && <div className="flex justify-between"><span>Discount/Surcharge</span><span>${purchase.discountSurcharge.toFixed(2)}</span></div>}
+                </div>
+
+                <div className="text-right font-bold text-lg bg-slate-100 p-2 rounded-md mt-4 text-slate-900">
+                    Grand Total (USD): ${grandTotalUSD.toFixed(2)}
+                </div>
+            </div>
+            <div className="flex justify-end pt-6 space-x-2 no-print">
+                <button onClick={onClose} className="px-4 py-2 bg-slate-200 text-slate-800 rounded-md hover:bg-slate-300">
+                    {hasPrinted ? 'Cancel Entry' : 'Cancel'}
+                </button>
+                <button onClick={handlePrint} disabled={hasPrinted} className="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 disabled:bg-indigo-300">
+                    Print
+                </button>
+                <button onClick={onSave} className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">
+                    {hasPrinted ? 'Save & Exit' : 'Save & Download PDF'}
+                </button>
+            </div>
+        </Modal>
     );
 };
 
@@ -88,19 +148,19 @@ const OriginalPurchaseFormInternal: React.FC<PurchasesModuleProps> = ({ showNoti
         const newBatchNumber = lastNumericBatch ? String(lastNumericBatch + 1) : '101';
 
         return {
-            date: new Date().toISOString().split('T')[0], supplierId: '', originalTypeId: '', quantityPurchased: undefined,
-            rate: undefined, invoiceAmount: undefined as number | undefined, 
+            date: new Date().toISOString().split('T')[0], supplierId: '', originalTypeId: '', quantityPurchased: '',
+            rate: '',
             currency: Currency.Dollar, conversionRate: 1, divisionId: '', subDivisionId: '',
-            batchNumber: newBatchNumber, containerNumber: '', discountSurcharge: undefined, 
-            freightForwarderId: '', freightAmount: undefined,
-            clearingAgentId: '', clearingAmount: undefined, 
-            commissionAgentId: '', commissionAmount: undefined,
+            batchNumber: newBatchNumber, containerNumber: '', discountSurcharge: '', 
+            freightForwarderId: '', freightAmount: '',
+            clearingAgentId: '', clearingAmount: '', 
+            commissionAgentId: '', commissionAmount: '',
             subSupplierId: '',
             originalProductId: '',
         };
     };
 
-    const [formData, setFormData] = useState<Partial<OriginalPurchased> & { invoiceAmount?: number }>(getInitialState());
+    const [formData, setFormData] = useState(getInitialState());
     const [freightCurrencyData, setFreightCurrencyData] = useState({ currency: Currency.Dollar, conversionRate: 1 });
     const [clearingCurrencyData, setClearingCurrencyData] = useState({ currency: Currency.Dollar, conversionRate: 1 });
     const [commissionCurrencyData, setCommissionCurrencyData] = useState({ currency: Currency.Dollar, conversionRate: 1 });
@@ -108,12 +168,13 @@ const OriginalPurchaseFormInternal: React.FC<PurchasesModuleProps> = ({ showNoti
     const [purchaseToSave, setPurchaseToSave] = useState<OriginalPurchased | null>(null);
     const [isSummaryModalOpen, setIsSummaryModalOpen] = useState(false);
     const [hasPrinted, setHasPrinted] = useState(false);
+    const [containerError, setContainerError] = useState<string | null>(null);
 
     const availableSubDivisions = useMemo(() => {
         if (!formData.divisionId) return [];
         return state.subDivisions.filter(sd => sd.divisionId === formData.divisionId);
     }, [formData.divisionId, state.subDivisions]);
-
+    
     const availableSubSuppliers = useMemo(() => {
         if (!formData.supplierId) return [];
         return state.subSuppliers.filter(ss => ss.supplierId === formData.supplierId);
@@ -126,150 +187,92 @@ const OriginalPurchaseFormInternal: React.FC<PurchasesModuleProps> = ({ showNoti
 
     useEffect(() => {
         const supplier = state.suppliers.find(s => s.id === formData.supplierId);
-        const newCurrency = supplier?.defaultCurrency || Currency.Dollar;
-        const newRate = defaultConversionRates[newCurrency] || 1;
-
-        setFormData(prev => ({
-            ...prev,
-            currency: newCurrency,
-            conversionRate: newRate,
-            subSupplierId: '',
-        }));
+        if (supplier) {
+            setFormData(prev => ({ ...prev, currency: supplier.defaultCurrency || Currency.Dollar, conversionRate: 1 }));
+        }
     }, [formData.supplierId, state.suppliers]);
-    
-    useEffect(() => {
-        setFormData(prev => ({ ...prev, originalProductId: '' }));
-    }, [formData.originalTypeId]);
-
-    // Effects to clear amounts when default agents are selected
-    useEffect(() => {
-        if (!formData.freightForwarderId) {
-            setFormData(prev => ({ ...prev, freightAmount: undefined }));
-        }
-    }, [formData.freightForwarderId]);
-
-    useEffect(() => {
-        if (!formData.clearingAgentId) {
-            setFormData(prev => ({ ...prev, clearingAmount: undefined }));
-        }
-    }, [formData.clearingAgentId]);
-
-    useEffect(() => {
-        if (!formData.commissionAgentId) {
-            setFormData(prev => ({ ...prev, commissionAmount: undefined }));
-        }
-    }, [formData.commissionAgentId]);
-
 
     const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
         const { name, value } = e.target;
-        
-        setFormData(prev => {
-            const newData: any = { ...prev, [name]: value };
-            const qty = parseFloat(String(newData.quantityPurchased || '0'));
+        setFormData(prev => ({ ...prev, [name]: value }));
+    };
 
-            if (name === 'rate') {
-                const rateVal = parseFloat(value);
-                if (qty > 0 && !isNaN(rateVal) && value !== '') {
-                    newData.invoiceAmount = parseFloat((qty * rateVal).toFixed(2));
-                } else if (value === '') {
-                    newData.invoiceAmount = undefined;
-                }
-            } else if (name === 'invoiceAmount') {
-                const amountVal = parseFloat(value);
-                if (qty > 0 && !isNaN(amountVal) && value !== '') {
-                    newData.rate = parseFloat((amountVal / qty).toFixed(6));
-                } else if (value === '') {
-                    newData.rate = undefined;
-                }
-            } else if (name === 'quantityPurchased') {
-                const qVal = parseFloat(value);
-                const rVal = parseFloat(String(newData.rate || '0'));
-                
-                if (!isNaN(qVal) && value !== '' && rVal > 0) {
-                    newData.invoiceAmount = parseFloat((qVal * rVal).toFixed(2));
-                }
+    const handleFinalizePurchase = () => {
+        if (!formData.supplierId || !formData.originalTypeId || !formData.quantityPurchased || !formData.rate) {
+            showNotification("Please fill all required fields (Supplier, Type, Quantity, Rate).");
+            return;
+        }
+
+        if (formData.containerNumber && formData.containerNumber.trim() !== '') {
+            const trimmedContainerNumber = formData.containerNumber.trim().toLowerCase();
+            const isDuplicateInOriginals = state.originalPurchases.some(p => p.containerNumber && p.containerNumber.trim().toLowerCase() === trimmedContainerNumber);
+            const isDuplicateInFinished = state.finishedGoodsPurchases.some(p => p.containerNumber && p.containerNumber.trim().toLowerCase() === trimmedContainerNumber);
+
+            if (isDuplicateInOriginals || isDuplicateInFinished) {
+                setContainerError(`DUPLICATE CONTAINER: The container number "${formData.containerNumber}" is already in use. Please enter a different one.`);
+                return;
             }
-
-            return newData;
-        });
-    };
-
-    const handleCurrencyChange = (newCurrency: { currency: Currency; conversionRate: number }) => {
-        setFormData(prev => ({ ...prev, ...newCurrency }));
-    };
-    
-    const handlePrepareSummary = (e: React.FormEvent) => {
-        e.preventDefault();
-
+        }
+        
         const supplier = state.suppliers.find(s => s.id === formData.supplierId);
-        const generatedId = generateOriginalPurchaseId(
-            state.nextOriginalPurchaseNumber, 
-            formData.date!, 
-            supplier?.name || 'Unknown'
-        );
+        const purchaseId = generateOriginalPurchaseId(state.nextOriginalPurchaseNumber, formData.date, supplier?.name || 'Unknown');
 
-        const fullPurchaseData: OriginalPurchased = {
-            id: generatedId,
-            ...getInitialState(),
-            ...formData,
-            quantityPurchased: Number(formData.quantityPurchased) || 0,
-            rate: Number(formData.rate) || 0,
-            discountSurcharge: Number(formData.discountSurcharge) || 0,
-            freightAmount: Number(formData.freightAmount) || 0,
-            clearingAmount: Number(formData.clearingAmount) || 0,
-            commissionAmount: Number(formData.commissionAmount) || 0,
+        const fullPurchase: OriginalPurchased = {
+            id: purchaseId,
+            date: formData.date,
+            supplierId: formData.supplierId,
+            subSupplierId: formData.subSupplierId || undefined,
+            originalTypeId: formData.originalTypeId,
+            originalProductId: formData.originalProductId || undefined,
+            quantityPurchased: Number(formData.quantityPurchased),
+            rate: Number(formData.rate),
+            currency: formData.currency,
+            conversionRate: formData.conversionRate,
+            batchNumber: formData.batchNumber,
+            containerNumber: formData.containerNumber,
+            divisionId: formData.divisionId,
+            subDivisionId: formData.subDivisionId,
+            discountSurcharge: Number(formData.discountSurcharge) || undefined,
+            
+            freightForwarderId: formData.freightForwarderId,
+            freightAmount: Number(formData.freightAmount) || undefined,
             freightCurrency: freightCurrencyData.currency,
             freightConversionRate: freightCurrencyData.conversionRate,
+            
+            clearingAgentId: formData.clearingAgentId,
+            clearingAmount: Number(formData.clearingAmount) || undefined,
             clearingCurrency: clearingCurrencyData.currency,
             clearingConversionRate: clearingCurrencyData.conversionRate,
+            
+            commissionAgentId: formData.commissionAgentId,
+            commissionAmount: Number(formData.commissionAmount) || undefined,
             commissionCurrency: commissionCurrencyData.currency,
             commissionConversionRate: commissionCurrencyData.conversionRate,
         };
-        setPurchaseToSave(fullPurchaseData);
+
+        setPurchaseToSave(fullPurchase);
         setHasPrinted(false);
         setIsSummaryModalOpen(true);
     };
 
-    const handleSaveAndContinue = async () => {
+    const handleSaveAndContinue = () => {
         if (!purchaseToSave) return;
         
-        // 1. Generate and download PDF
-        const { jsPDF } = (window as any).jspdf;
-        const html2canvas = (window as any).html2canvas;
-        const input = document.getElementById('purchase-voucher-content');
-        if (input && jsPDF && html2canvas) {
-            const canvas = await html2canvas(input, { scale: 2 });
-            const imgData = canvas.toDataURL('image/png');
-            const pdf = new jsPDF('p', 'mm', 'a4');
-            const pdfWidth = pdf.internal.pageSize.getWidth();
-            const imgWidth = canvas.width;
-            const imgHeight = canvas.height;
-            const ratio = pdfWidth / imgWidth;
-            const pdfHeight = imgHeight * ratio;
-            pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
-            pdf.save(`PurchaseInvoice_${purchaseToSave.id}.pdf`);
-        }
-
-        // 2. Dispatch actions to save data
         dispatch({ type: 'ADD_ENTITY', payload: { entity: 'originalPurchases', data: purchaseToSave } });
         
         const jeDate = purchaseToSave.date;
-        const baseDescription = `Purchase from ${state.suppliers.find(s => s.id === purchaseToSave.supplierId)?.name}`;
+        const supplierName = state.suppliers.find(s => s.id === purchaseToSave.supplierId)?.name || 'N/A';
+        const baseDescription = `Original Purchase from ${supplierName}`;
         
-        const itemValueFC = purchaseToSave.quantityPurchased * purchaseToSave.rate;
-        const itemValueUSD = (itemValueFC * (purchaseToSave.conversionRate || 1)) + (purchaseToSave.discountSurcharge || 0);
-
-        const purchaseDebit: JournalEntry = { id: `je-d-${purchaseToSave.id}`, voucherId: `JV-${purchaseToSave.id}`, date: jeDate, entryType: JournalEntryType.Journal, account: 'EXP-004', debit: itemValueUSD, credit: 0, description: baseDescription };
-        const supplierCredit: JournalEntry = { 
-            id: `je-c-${purchaseToSave.id}`, voucherId: `JV-${purchaseToSave.id}`, date: jeDate, entryType: JournalEntryType.Journal, account: 'AP-001', 
-            debit: 0, credit: itemValueUSD, description: baseDescription, entityId: purchaseToSave.supplierId, entityType: 'supplier',
-            originalAmount: purchaseToSave.currency !== Currency.Dollar ? { amount: itemValueFC, currency: purchaseToSave.currency } : undefined,
-        };
+        const itemValueUSD = (purchaseToSave.quantityPurchased * purchaseToSave.rate) * purchaseToSave.conversionRate + (purchaseToSave.discountSurcharge || 0);
+        
+        const purchaseDebit: JournalEntry = { id: `je-d-op-${purchaseToSave.id}`, voucherId: `JV-${purchaseToSave.id}`, date: jeDate, entryType: JournalEntryType.Journal, account: 'EXP-004', debit: itemValueUSD, credit: 0, description: baseDescription };
+        const supplierCredit: JournalEntry = { id: `je-c-op-${purchaseToSave.id}`, voucherId: `JV-${purchaseToSave.id}`, date: jeDate, entryType: JournalEntryType.Journal, account: 'AP-001', debit: 0, credit: itemValueUSD, description: baseDescription, entityId: purchaseToSave.supplierId, entityType: 'supplier' };
+        
         dispatch({ type: 'ADD_ENTITY', payload: { entity: 'journalEntries', data: purchaseDebit }});
         dispatch({ type: 'ADD_ENTITY', payload: { entity: 'journalEntries', data: supplierCredit }});
 
-        const costs = [
+         const costs = [
             { type: 'Freight', id: purchaseToSave.freightForwarderId, amount: purchaseToSave.freightAmount, currencyData: freightCurrencyData, account: 'EXP-005', entityType: 'freightForwarder' as const, name: state.freightForwarders.find(f=>f.id===purchaseToSave.freightForwarderId)?.name },
             { type: 'Clearing', id: purchaseToSave.clearingAgentId, amount: purchaseToSave.clearingAmount, currencyData: clearingCurrencyData, account: 'EXP-006', entityType: 'clearingAgent' as const, name: state.clearingAgents.find(f=>f.id===purchaseToSave.clearingAgentId)?.name },
             { type: 'Commission', id: purchaseToSave.commissionAgentId, amount: purchaseToSave.commissionAmount, currencyData: commissionCurrencyData, account: 'EXP-008', entityType: 'commissionAgent' as const, name: state.commissionAgents.find(f=>f.id===purchaseToSave.commissionAgentId)?.name },
@@ -280,17 +283,12 @@ const OriginalPurchaseFormInternal: React.FC<PurchasesModuleProps> = ({ showNoti
                 const costValueUSD = (cost.amount || 0) * cost.currencyData.conversionRate;
                 const costDesc = `${cost.type} for INV ${purchaseToSave.id} from ${cost.name}`;
                 const debit: JournalEntry = { id: `je-d-${cost.type.toLowerCase()}-${purchaseToSave.id}`, voucherId: `JV-${purchaseToSave.id}`, date: jeDate, entryType: JournalEntryType.Journal, account: cost.account, debit: costValueUSD, credit: 0, description: costDesc };
-                const credit: JournalEntry = { 
-                    id: `je-c-${cost.type.toLowerCase()}-${purchaseToSave.id}`, voucherId: `JV-${purchaseToSave.id}`, date: jeDate, entryType: JournalEntryType.Journal, 
-                    account: 'AP-001', debit: 0, credit: costValueUSD, description: costDesc, entityId: cost.id, entityType: cost.entityType,
-                    originalAmount: cost.currencyData.currency !== Currency.Dollar ? { amount: cost.amount || 0, currency: cost.currencyData.currency } : undefined
-                };
+                const credit: JournalEntry = { id: `je-c-${cost.type.toLowerCase()}-${purchaseToSave.id}`, voucherId: `JV-${purchaseToSave.id}`, date: jeDate, entryType: JournalEntryType.Journal, account: 'AP-001', debit: 0, credit: costValueUSD, description: costDesc, entityId: cost.id, entityType: cost.entityType };
                 dispatch({ type: 'ADD_ENTITY', payload: { entity: 'journalEntries', data: debit }});
                 dispatch({ type: 'ADD_ENTITY', payload: { entity: 'journalEntries', data: credit }});
             }
         });
         
-        // 3. Reset and close
         showNotification('Original Purchase Saved!');
         setFormData(getInitialState());
         setIsSummaryModalOpen(false);
@@ -300,119 +298,124 @@ const OriginalPurchaseFormInternal: React.FC<PurchasesModuleProps> = ({ showNoti
     const isFreightDisabled = !formData.freightForwarderId;
     const isClearingDisabled = !formData.clearingAgentId;
     const isCommissionDisabled = !formData.commissionAgentId;
-
     const inputClasses = "mt-1 w-full p-2 rounded-md";
 
     return (
-        <>
-            <form onSubmit={handlePrepareSummary} className="space-y-6">
-                <div className="border rounded-lg p-4 bg-white">
-                    <h3 className="text-lg font-semibold text-slate-800 mb-4 border-b pb-2">Core Information</h3>
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                        <div><label className="block text-sm font-medium text-slate-700">Date</label><input type="date" name="date" value={formData.date} onChange={handleChange} required className={`${inputClasses}`}/></div>
-                        <div>
-                            <label className="block text-sm font-medium text-slate-700">Supplier</label>
-                            <EntitySelector
-                                entities={state.suppliers}
-                                selectedEntityId={formData.supplierId || ''}
-                                onSelect={(id) => handleChange({ target: { name: 'supplierId', value: id } } as any)}
-                                placeholder="Search Suppliers..."
-                            />
-                        </div>
-                         <div>
-                            <label className="block text-sm font-medium text-slate-700">Sub-Supplier</label>
-                            <select name="subSupplierId" value={formData.subSupplierId} onChange={handleChange} disabled={!formData.supplierId || availableSubSuppliers.length === 0} className={`${inputClasses}`}>
-                                <option value="">Select Sub-Supplier (Optional)</option>
-                                {availableSubSuppliers.map(ss => <option key={ss.id} value={ss.id}>{ss.name}</option>)}
-                            </select>
-                        </div>
-                        <div><label className="block text-sm font-medium text-slate-700">Batch Number</label><input type="text" name="batchNumber" value={formData.batchNumber} onChange={handleChange} className={`${inputClasses}`}/></div>
-                        <div>
-                            <label className="block text-sm font-medium text-slate-700">Original Type</label>
-                            <EntitySelector
-                                entities={state.originalTypes}
-                                selectedEntityId={formData.originalTypeId || ''}
-                                onSelect={(id) => setFormData(prev => ({ ...prev, originalTypeId: id }))}
-                                placeholder="Search Type..."
-                            />
-                        </div>
-                        <div>
-                            <label className="block text-sm font-medium text-slate-700">Original Product</label>
-                            <select name="originalProductId" value={formData.originalProductId} onChange={handleChange} disabled={!formData.originalTypeId || availableOriginalProducts.length === 0} className={`${inputClasses}`}>
-                                <option value="">Select Product (Optional)</option>
-                                {availableOriginalProducts.map(op => <option key={op.id} value={op.id}>{op.name}</option>)}
-                            </select>
-                        </div>
+        <div className="space-y-6">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-end p-4 border rounded-lg bg-white">
+                <div>
+                    <label className="block text-sm font-medium text-slate-700">Date</label>
+                    <input type="date" name="date" value={formData.date} onChange={handleChange} required className={inputClasses}/>
+                </div>
+                <div>
+                    <label className="block text-sm font-medium text-slate-700">Supplier</label>
+                    <div className="flex space-x-1">
+                        <EntitySelector
+                            entities={state.suppliers}
+                            selectedEntityId={formData.supplierId}
+                            onSelect={(id) => setFormData(prev => ({ ...prev, supplierId: id }))}
+                            placeholder="Search Suppliers..."
+                        />
+                        <button type="button" onClick={() => onOpenSetup('suppliers')} className="text-blue-600 hover:text-blue-800 font-bold px-2">+</button>
                     </div>
                 </div>
+                <div>
+                    <label className="block text-sm font-medium text-slate-700">Sub-Supplier</label>
+                    <select name="subSupplierId" value={formData.subSupplierId} onChange={handleChange} disabled={!formData.supplierId} className={inputClasses}>
+                        <option value="">None / Direct</option>
+                        {availableSubSuppliers.map(ss => <option key={ss.id} value={ss.id}>{ss.name}</option>)}
+                    </select>
+                </div>
+                 <div>
+                    <label className="block text-sm font-medium text-slate-700">Batch Number</label>
+                    <input type="text" name="batchNumber" value={formData.batchNumber} onChange={handleChange} className={inputClasses} />
+                </div>
+            </div>
 
-                <div className="border rounded-lg p-4 bg-white">
-                    <h3 className="text-lg font-semibold text-slate-800 mb-4 border-b pb-2">Quantity & Pricing</h3>
-                    <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
-                        <div><label className="block text-sm font-medium text-slate-700">Quantity</label><input type="number" name="quantityPurchased" value={formData.quantityPurchased || ''} onChange={handleChange} required className={`${inputClasses}`}/></div>
-                        <div><label className="block text-sm font-medium text-slate-700">Purchase Rate</label><input type="number" name="rate" step="any" value={formData.rate || ''} onChange={handleChange} required className={`${inputClasses}`}/></div>
-                        <div><label className="block text-sm font-medium text-slate-700">Invoice Amount</label><input type="number" name="invoiceAmount" step="any" value={formData.invoiceAmount || ''} onChange={handleChange} className={`${inputClasses}`}/></div>
-                        <div className="md:col-span-1"><label className="block text-sm font-medium text-slate-700">Currency</label><CurrencyInput value={{currency: formData.currency!, conversionRate: formData.conversionRate!}} onChange={handleCurrencyChange} /></div>
-                        <div><label className="block text-sm font-medium text-slate-700">Discount(-) / Surcharge(+)</label><input type="number" name="discountSurcharge" step="0.01" value={formData.discountSurcharge || ''} onChange={handleChange} className={`${inputClasses}`} placeholder="Amount in USD"/></div>
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-end p-4 border rounded-lg bg-white">
+                <div>
+                    <label className="block text-sm font-medium text-slate-700">Original Type</label>
+                    <div className="flex space-x-1">
+                        <select name="originalTypeId" value={formData.originalTypeId} onChange={handleChange} className={inputClasses}>
+                            <option value="">Select Type</option>
+                            {state.originalTypes.map(ot => <option key={ot.id} value={ot.id}>{ot.name}</option>)}
+                        </select>
+                        <button type="button" onClick={() => onOpenSetup('originalTypes')} className="text-blue-600 hover:text-blue-800 font-bold px-2">+</button>
                     </div>
                 </div>
-                
-                <div className="border rounded-lg p-4 bg-white">
-                    <h3 className="text-lg font-semibold text-slate-800 mb-4 border-b pb-2">Logistics & Destination</h3>
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                        <div><label className="block text-sm font-medium text-slate-700">Container #</label><input type="text" name="containerNumber" value={formData.containerNumber} onChange={handleChange} className={`${inputClasses}`} required /></div>
-                        <div><label className="block text-sm font-medium text-slate-700">Division</label><select name="divisionId" value={formData.divisionId} onChange={handleChange} required className={`${inputClasses}`}><option value="">Select Division</option>{state.divisions.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}</select></div>
-                        <div><label className="block text-sm font-medium text-slate-700">Sub Division</label><select name="subDivisionId" value={formData.subDivisionId} onChange={handleChange} disabled={!formData.divisionId || availableSubDivisions.length === 0} className={`${inputClasses}`}><option value="">Select Sub-Division</option>{availableSubDivisions.map(sd => <option key={sd.id} value={sd.id}>{sd.name}</option>)}</select></div>
+                <div>
+                    <label className="block text-sm font-medium text-slate-700">Original Product</label>
+                    <select name="originalProductId" value={formData.originalProductId} onChange={handleChange} disabled={!formData.originalTypeId} className={inputClasses}>
+                        <option value="">None</option>
+                        {availableOriginalProducts.map(op => <option key={op.id} value={op.id}>{op.name}</option>)}
+                    </select>
+                </div>
+                <div>
+                    <label className="block text-sm font-medium text-slate-700">Quantity Purchased</label>
+                    <input type="number" name="quantityPurchased" value={formData.quantityPurchased} onChange={handleChange} className={inputClasses} />
+                </div>
+                <div>
+                    <label className="block text-sm font-medium text-slate-700">Rate</label>
+                    <input type="number" name="rate" step="0.01" value={formData.rate} onChange={handleChange} className={inputClasses} />
+                </div>
+                <div className="md:col-span-1">
+                    <label className="block text-sm font-medium text-slate-700">Currency & Rate</label>
+                    <CurrencyInput value={{currency: formData.currency, conversionRate: formData.conversionRate}} onChange={(val) => setFormData(p => ({...p, ...val}))} />
+                </div>
+            </div>
+
+             <div className="border rounded-lg p-4 bg-white">
+                <h3 className="text-lg font-semibold text-slate-800 mb-4 border-b pb-2">Logistics & Destination</h3>
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                    <div><label className="block text-sm font-medium text-slate-700">Container #</label><input type="text" name="containerNumber" value={formData.containerNumber} onChange={handleChange} className={`${inputClasses}`}/></div>
+                    <div><label className="block text-sm font-medium text-slate-700">Division</label><select name="divisionId" value={formData.divisionId} onChange={handleChange} className={`${inputClasses}`}><option value="">Select Division</option>{state.divisions.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}</select></div>
+                    <div><label className="block text-sm font-medium text-slate-700">Sub Division</label><select name="subDivisionId" value={formData.subDivisionId} onChange={handleChange} disabled={!formData.divisionId || availableSubDivisions.length === 0} className={`${inputClasses}`}><option value="">Select Sub-Division</option>{availableSubDivisions.map(sd => <option key={sd.id} value={sd.id}>{sd.name}</option>)}</select></div>
+                    <div><label className="block text-sm font-medium text-slate-700">Discount(-) / Surcharge(+)</label><input type="number" name="discountSurcharge" step="0.01" value={formData.discountSurcharge} onChange={handleChange} className={`${inputClasses}`} placeholder="Amount in USD"/></div>
+                </div>
+            </div>
+
+            <div className="border rounded-lg p-4 bg-white">
+                <h3 className="text-lg font-semibold text-slate-800 mb-4 border-b pb-2">Additional Cost</h3>
+                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <div className="space-y-2">
+                        <label className="block text-sm font-medium text-slate-700">Freight Forwarder</label>
+                        <select name="freightForwarderId" value={formData.freightForwarderId} onChange={handleChange} className={`w-full p-2 rounded-md`}><option value="">Select...</option>{state.freightForwarders.map(ff => <option key={ff.id} value={ff.id}>{ff.name}</option>)}</select>
+                        <input type="number" name="freightAmount" placeholder="Freight Amount" value={formData.freightAmount} onChange={handleChange} disabled={isFreightDisabled} className={`w-full p-2 rounded-md`} />
+                        <CurrencyInput value={freightCurrencyData} onChange={setFreightCurrencyData} disabled={isFreightDisabled} />
+                    </div>
+                    <div className="space-y-2">
+                        <label className="block text-sm font-medium text-slate-700">Clearing Agent</label>
+                        <select name="clearingAgentId" value={formData.clearingAgentId} onChange={handleChange} className={`w-full p-2 rounded-md`}><option value="">Select...</option>{state.clearingAgents.map(ca => <option key={ca.id} value={ca.id}>{ca.name}</option>)}</select>
+                        <input type="number" name="clearingAmount" placeholder="Clearing Amount" value={formData.clearingAmount} onChange={handleChange} disabled={isClearingDisabled} className={`w-full p-2 rounded-md`} />
+                        <CurrencyInput value={clearingCurrencyData} onChange={setClearingCurrencyData} disabled={isClearingDisabled} />
+                    </div>
+                    <div className="space-y-2">
+                        <label className="block text-sm font-medium text-slate-700">Commission Agent</label>
+                        <select name="commissionAgentId" value={formData.commissionAgentId} onChange={handleChange} className={`w-full p-2 rounded-md`}><option value="">Select...</option>{state.commissionAgents.map(ca => <option key={ca.id} value={ca.id}>{ca.name}</option>)}</select>
+                        <input type="number" name="commissionAmount" placeholder="Commission Amount" value={formData.commissionAmount} onChange={handleChange} disabled={isCommissionDisabled} className={`w-full p-2 rounded-md`} />
+                        <CurrencyInput value={commissionCurrencyData} onChange={setCommissionCurrencyData} disabled={isCommissionDisabled} />
                     </div>
                 </div>
+            </div>
 
-                <div className="border rounded-lg p-4 bg-white">
-                    <h3 className="text-lg font-semibold text-slate-800 mb-4 border-b pb-2">Additional Cost</h3>
-                     <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                        <div className="space-y-2">
-                            <div className="flex justify-between">
-                                <label className="block text-sm font-medium text-slate-700">Freight Forwarder</label>
-                                <button type="button" onClick={() => onOpenSetup('freightForwarders')} className="text-xs text-blue-600 hover:underline">Not found? Add new</button>
-                            </div>
-                            <select name="freightForwarderId" value={formData.freightForwarderId} onChange={handleChange} className={`w-full p-2 rounded-md`}>
-                                <option value="">Select...</option>
-                                {state.freightForwarders.map(ff => <option key={ff.id} value={ff.id}>{ff.name}</option>)}
-                            </select>
-                            <input type="number" name="freightAmount" placeholder="Freight Amount" value={formData.freightAmount || ''} onChange={handleChange} disabled={isFreightDisabled} className={`w-full p-2 rounded-md`} />
-                            <CurrencyInput value={freightCurrencyData} onChange={setFreightCurrencyData} disabled={isFreightDisabled} />
-                        </div>
-                        <div className="space-y-2">
-                            <div className="flex justify-between">
-                                <label className="block text-sm font-medium text-slate-700">Clearing Agent</label>
-                                <button type="button" onClick={() => onOpenSetup('clearingAgents')} className="text-xs text-blue-600 hover:underline">Not found? Add new</button>
-                            </div>
-                            <select name="clearingAgentId" value={formData.clearingAgentId} onChange={handleChange} className={`w-full p-2 rounded-md`}>
-                                <option value="">Select...</option>
-                                {state.clearingAgents.map(ca => <option key={ca.id} value={ca.id}>{ca.name}</option>)}
-                            </select>
-                            <input type="number" name="clearingAmount" placeholder="Clearing Amount" value={formData.clearingAmount || ''} onChange={handleChange} disabled={isClearingDisabled} className={`w-full p-2 rounded-md`} />
-                            <CurrencyInput value={clearingCurrencyData} onChange={setClearingCurrencyData} disabled={isClearingDisabled} />
-                        </div>
-                        <div className="space-y-2">
-                            <div className="flex justify-between">
-                                <label className="block text-sm font-medium text-slate-700">Commission Agent</label>
-                                <button type="button" onClick={() => onOpenSetup('commissionAgents')} className="text-xs text-blue-600 hover:underline">Not found? Add new</button>
-                            </div>
-                            <select name="commissionAgentId" value={formData.commissionAgentId} onChange={handleChange} className={`w-full p-2 rounded-md`}>
-                                <option value="">Select...</option>
-                                {state.commissionAgents.map(ca => <option key={ca.id} value={ca.id}>{ca.name}</option>)}
-                            </select>
-                            <input type="number" name="commissionAmount" placeholder="Commission Amount" value={formData.commissionAmount || ''} onChange={handleChange} disabled={isCommissionDisabled} className={`w-full p-2 rounded-md`} />
-                            <CurrencyInput value={commissionCurrencyData} onChange={setCommissionCurrencyData} disabled={isCommissionDisabled} />
+            <div className="flex justify-end pt-4 border-t">
+                <button onClick={handleFinalizePurchase} className="px-6 py-2 bg-green-600 text-white rounded-md hover:bg-green-700">Finalize Purchase</button>
+            </div>
+            
+             {containerError && (
+                <Modal isOpen={!!containerError} onClose={() => setContainerError(null)} title="Validation Error">
+                    <div className="text-slate-700">
+                        <p className="font-semibold text-red-600">Duplicate Container Number</p>
+                        <p className="mt-2">{containerError}</p>
+                        <div className="flex justify-end mt-6">
+                            <button onClick={() => setContainerError(null)} className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">OK</button>
                         </div>
                     </div>
-                </div>
+                </Modal>
+            )}
 
-                <div className="flex justify-end"><button type="submit" disabled={!formData.supplierId} className="px-6 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:bg-blue-300">Finalize Purchase</button></div>
-            </form>
-
-            {purchaseToSave && (
-                <PurchaseSummaryModal 
+             {purchaseToSave && (
+                <OriginalPurchaseSummaryModal 
                     isOpen={isSummaryModalOpen}
                     onClose={() => setIsSummaryModalOpen(false)}
                     onSave={handleSaveAndContinue}
@@ -422,136 +425,8 @@ const OriginalPurchaseFormInternal: React.FC<PurchasesModuleProps> = ({ showNoti
                     setHasPrinted={setHasPrinted}
                 />
             )}
-        </>
-    );
-};
-
-interface FinishedGoodsPurchaseFormProps {
-    showNotification: (msg: string) => void;
-    userProfile: UserProfile | null;
-}
-
-const FinishedGoodsPurchaseFormInternal: React.FC<FinishedGoodsPurchaseFormProps> = ({ showNotification, userProfile }) => {
-    // This component is now an alias for StockLotPurchaseForm, but keeping the structure for clarity
-    // In a real refactor, this would be removed and StockLotPurchaseForm would be used directly.
-    return <div className="text-slate-500">This feature has been integrated into the "Stock-Lot / Bundle Purchase" module.</div>
-};
-
-// --- Modals for Purchase Summaries and Print ---
-interface PurchaseSummaryModalProps {
-    isOpen: boolean;
-    onClose: () => void;
-    onSave: () => void;
-    purchase: OriginalPurchased;
-    state: AppState;
-    hasPrinted: boolean;
-    setHasPrinted: (p: boolean) => void;
-}
-
-interface FinishedGoodsPurchaseSummaryModalProps {
-    isOpen: boolean;
-    onClose: () => void;
-    onSave: () => void;
-    purchase: FinishedGoodsPurchase;
-    state: AppState;
-    hasPrinted: boolean;
-    setHasPrinted: (p: boolean) => void;
-}
-
-const PurchaseSummaryModal: React.FC<PurchaseSummaryModalProps> = ({ isOpen, onClose, onSave, purchase, state, hasPrinted, setHasPrinted }) => {
-    
-    const handlePrint = () => {
-        window.print();
-        setHasPrinted(true);
-    };
-
-    return (
-        <Modal isOpen={isOpen} onClose={onClose} title="Purchase Summary" size="4xl">
-            <PrintablePurchaseVoucher purchase={purchase} state={state} />
-            <div className="flex justify-end pt-6 space-x-2 no-print">
-                <button onClick={onClose} className="px-4 py-2 bg-slate-200 text-slate-800 rounded-md hover:bg-slate-300">
-                    {hasPrinted ? 'Cancel Entry' : 'Cancel'}
-                </button>
-                <button onClick={handlePrint} disabled={hasPrinted} className="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 disabled:bg-indigo-300">
-                    Print
-                </button>
-                <button onClick={onSave} className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">
-                    {hasPrinted ? 'Save & Exit' : 'Save & Continue'}
-                </button>
-            </div>
-        </Modal>
-    );
-};
-
-const PrintablePurchaseVoucher: React.FC<{ purchase: OriginalPurchased, state: AppState }> = ({ purchase, state }) => {
-    const { supplierId, originalTypeId, date, rate, quantityPurchased, currency, conversionRate, discountSurcharge } = purchase;
-    const supplier = state.suppliers.find(s => s.id === supplierId);
-    const subSupplier = state.subSuppliers.find(ss => ss.id === purchase.subSupplierId);
-    const originalType = state.originalTypes.find(ot => ot.id === originalTypeId);
-    const originalProduct = state.originalProducts.find(op => op.id === purchase.originalProductId);
-    
-    const itemValueFC = quantityPurchased * rate;
-    const itemValueUSD = itemValueFC * (conversionRate || 1) + (discountSurcharge || 0);
-
-    const freightValueUSD = (purchase.freightAmount || 0) * (purchase.freightConversionRate || 1);
-    const clearingValueUSD = (purchase.clearingAmount || 0) * (purchase.clearingConversionRate || 1);
-    const commissionValueUSD = (purchase.commissionAmount || 0) * (purchase.commissionConversionRate || 1);
-    
-    const totalValueUSD = itemValueUSD + freightValueUSD + clearingValueUSD + commissionValueUSD;
-    
-    const costs = [
-        { label: 'Freight', name: state.freightForwarders.find(e => e.id === purchase.freightForwarderId)?.name, amount: purchase.freightAmount, currency: purchase.freightCurrency },
-        { label: 'Clearing', name: state.clearingAgents.find(e => e.id === purchase.clearingAgentId)?.name, amount: purchase.clearingAmount, currency: purchase.clearingCurrency },
-        { label: 'Commission', name: state.commissionAgents.find(e => e.id === purchase.commissionAgentId)?.name, amount: purchase.commissionAmount, currency: purchase.commissionCurrency },
-    ].filter(c => c.amount && c.amount > 0);
-
-    return (
-        <div id="purchase-voucher-content" className="p-4 bg-white font-sans text-sm">
-            <h2 className="text-xl font-bold text-center text-slate-900">Purchase Voucher</h2>
-            <div className="grid grid-cols-2 gap-x-8 gap-y-1 mt-4 border-b pb-2 text-slate-700">
-                <p><strong>ID:</strong> {purchase.id}</p>
-                <p><strong>Date:</strong> {date}</p>
-                <p><strong>Supplier:</strong> {supplier?.name} {subSupplier ? `(${subSupplier.name})` : ''}</p>
-                <p><strong>Batch No:</strong> {purchase.batchNumber}</p>
-                <p><strong>Container No:</strong> {purchase.containerNumber || 'N/A'}</p>
-            </div>
-            <table className="w-full text-left my-4">
-                <thead className="border-b">
-                    <tr className="bg-slate-50">
-                        <th className="p-1 font-semibold text-slate-600">Description</th>
-                        <th className="p-1 font-semibold text-slate-600 text-right">Qty</th>
-                        <th className="p-1 font-semibold text-slate-600 text-right">Rate ({currency})</th>
-                        <th className="p-1 font-semibold text-slate-600 text-right">Total ({currency})</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <tr>
-                        <td className="p-1 text-slate-800">{originalType?.name} {originalProduct ? `- ${originalProduct.name}` : ''}</td>
-                        <td className="p-1 text-slate-800 text-right">{quantityPurchased.toLocaleString()}</td>
-                        <td className="p-1 text-slate-800 text-right">{rate.toFixed(2)}</td>
-                        <td className="p-1 text-slate-800 text-right">{itemValueFC.toFixed(2)}</td>
-                    </tr>
-                </tbody>
-            </table>
-            {costs.length > 0 && (<>
-                <h4 className="font-semibold mt-2 text-slate-800">Additional Costs</h4>
-                <table className="w-full text-left my-2 text-xs">
-                    <tbody>
-                        {costs.map(c => (
-                            <tr key={c.label}>
-                                <td className="p-1 text-slate-700">{c.label} ({c.name})</td>
-                                <td className="p-1 text-slate-700 text-right">{c.amount?.toFixed(2)} {c.currency}</td>
-                            </tr>
-                        ))}
-                    </tbody>
-                </table>
-            </>)}
-            <div className="text-right font-bold text-lg bg-slate-100 p-2 rounded-md mt-4 text-slate-900">
-                Grand Total (USD): ${totalValueUSD.toFixed(2)}
-            </div>
         </div>
     );
 };
-
 
 export default PurchasesModule;
