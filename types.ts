@@ -1,3 +1,4 @@
+
 export enum Currency {
     Dollar = '$',
     AED = 'AED',
@@ -285,6 +286,9 @@ export interface OriginalPurchased {
     commissionCurrency?: Currency;
     commissionConversionRate?: number;
     discountSurcharge?: number; // In USD
+    // New fields for Supplier Services
+    supplierServiceName?: string;
+    supplierServiceAmount?: number; // In selected currency (same as rate currency)
 }
 
 export interface Production {

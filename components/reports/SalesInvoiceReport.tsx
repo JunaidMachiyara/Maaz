@@ -27,7 +27,7 @@ const SalesInvoiceViewModal: React.FC<{ invoiceId: string; onClose: () => void; 
     };
     
     const itemsTotal = invoice.items.reduce((sum, item) => sum + calculateItemValue(item), 0);
-    const grandTotal = itemsTotal + (invoice.freightAmount || 0) + (invoice.customCharges || 0);
+    const grandTotal = itemsTotal + (invoice.freightAmount || 0) + (invoice.customCharges || 0) + (invoice.discountSurcharge || 0);
     const currency = invoice.items.length > 0 ? (invoice.items[0].currency || Currency.Dollar) : Currency.Dollar;
 
     return (
@@ -92,6 +92,12 @@ const SalesInvoiceViewModal: React.FC<{ invoiceId: string; onClose: () => void; 
                                 <td className="p-2 text-right text-slate-800">{invoice.customCharges.toFixed(2)}</td>
                             </tr>
                         )}
+                        {invoice.discountSurcharge && (
+                            <tr className="font-medium">
+                                <td colSpan={3} className="p-2 text-right text-slate-800">Discount / Surcharge</td>
+                                <td className="p-2 text-right text-slate-800">{invoice.discountSurcharge.toFixed(2)}</td>
+                            </tr>
+                        )}
                         <tr className="font-bold bg-slate-100">
                             <td colSpan={3} className="p-2 text-right text-slate-800">Grand Total ({currency})</td>
                             <td className="p-2 text-right text-slate-800">{grandTotal.toFixed(2)}</td>
@@ -146,7 +152,7 @@ const SalesInvoiceReport: React.FC = () => {
             return total + itemValueInDollar;
         }, 0);
 
-        return itemsTotal + (invoice.freightAmount || 0) + (invoice.customCharges || 0);
+        return itemsTotal + (invoice.freightAmount || 0) + (invoice.customCharges || 0) + (invoice.discountSurcharge || 0);
     };
 
     const reportData = useMemo(() => {

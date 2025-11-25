@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useMemo } from 'react';
 import { useData } from '../context/DataContext.tsx';
 import { 
@@ -77,8 +78,9 @@ const OriginalPurchaseSummaryModal: React.FC<{
     const freightValueUSD = (purchase.freightAmount || 0) * (purchase.freightConversionRate || 1);
     const clearingValueUSD = (purchase.clearingAmount || 0) * (purchase.clearingConversionRate || 1);
     const commissionValueUSD = (purchase.commissionAmount || 0) * (purchase.commissionConversionRate || 1);
+    const supplierServiceUSD = (purchase.supplierServiceAmount || 0) * purchase.conversionRate;
     
-    const totalAdditionalCosts = freightValueUSD + clearingValueUSD + commissionValueUSD;
+    const totalAdditionalCosts = freightValueUSD + clearingValueUSD + commissionValueUSD + supplierServiceUSD;
     const grandTotalUSD = itemValueUSD + totalAdditionalCosts + (purchase.discountSurcharge || 0);
 
     return (
@@ -92,7 +94,7 @@ const OriginalPurchaseSummaryModal: React.FC<{
                     <p><strong>Container No:</strong> {purchase.containerNumber || 'N/A'}</p>
                 </div>
                 <table className="w-full text-left my-4">
-                    <thead className="border-b"><tr className="bg-slate-50"><th className="p-1 font-semibold text-slate-800">Description</th><th className="p-1 font-semibold text-slate-800 text-right">Qty</th><th className="p-1 font-semibold text-slate-800 text-right">Rate ({purchase.currency})</th><th className="p-1 font-semibold text-slate-800 text-right">Total ({purchase.currency})</th></tr></thead>
+                    <thead className="border-b"><tr className="bg-slate-5"><th className="p-1 font-semibold text-slate-800">Description</th><th className="p-1 font-semibold text-slate-800 text-right">Qty</th><th className="p-1 font-semibold text-slate-800 text-right">Rate ({purchase.currency})</th><th className="p-1 font-semibold text-slate-800 text-right">Total ({purchase.currency})</th></tr></thead>
                     <tbody>
                         <tr>
                             <td className="p-1 text-slate-800">{originalType?.name}</td>
@@ -110,6 +112,7 @@ const OriginalPurchaseSummaryModal: React.FC<{
                     {purchase.freightAmount && <div className="flex justify-between"><span>Freight</span><span>${freightValueUSD.toFixed(2)}</span></div>}
                     {purchase.clearingAmount && <div className="flex justify-between"><span>Clearing</span><span>${clearingValueUSD.toFixed(2)}</span></div>}
                     {purchase.commissionAmount && <div className="flex justify-between"><span>Commission</span><span>${commissionValueUSD.toFixed(2)}</span></div>}
+                    {purchase.supplierServiceAmount && <div className="flex justify-between"><span>Supplier Service: {purchase.supplierServiceName}</span><span>${supplierServiceUSD.toFixed(2)}</span></div>}
                     {purchase.discountSurcharge && <div className="flex justify-between"><span>Discount/Surcharge</span><span>${purchase.discountSurcharge.toFixed(2)}</span></div>}
                 </div>
 
@@ -151,12 +154,15 @@ const OriginalPurchaseFormInternal: React.FC<PurchasesModuleProps> = ({ showNoti
             date: new Date().toISOString().split('T')[0], supplierId: '', originalTypeId: '', quantityPurchased: '',
             rate: '',
             currency: Currency.Dollar, conversionRate: 1, divisionId: '', subDivisionId: '',
-            batchNumber: newBatchNumber, containerNumber: '', discountSurcharge: '', 
+            batchNumber: newBatchNumber, containerNumber: '', 
+            discountRate: '', surchargeRate: '', // Changed from Amount to Rate
             freightForwarderId: '', freightAmount: '',
             clearingAgentId: '', clearingAmount: '', 
             commissionAgentId: '', commissionAmount: '',
             subSupplierId: '',
             originalProductId: '',
+            supplierServiceName: '',
+            supplierServiceAmount: '',
         };
     };
 
@@ -217,6 +223,18 @@ const OriginalPurchaseFormInternal: React.FC<PurchasesModuleProps> = ({ showNoti
         const supplier = state.suppliers.find(s => s.id === formData.supplierId);
         const purchaseId = generateOriginalPurchaseId(state.nextOriginalPurchaseNumber, formData.date, supplier?.name || 'Unknown');
 
+        // Updated Logic: Rate-based Calculation
+        const discountRate = Number(formData.discountRate) || 0;
+        const surchargeRate = Number(formData.surchargeRate) || 0;
+        const quantity = Number(formData.quantityPurchased) || 0;
+        const conversionRate = formData.conversionRate || 1;
+
+        // Calculate net effect in USD. 
+        // Net Rate = (Surcharge Rate - Discount Rate)
+        // Total FCY Amount = Net Rate * Quantity
+        // Total USD Amount = Total FCY Amount * Conversion Rate
+        const netDiscountSurcharge = (surchargeRate - discountRate) * quantity * conversionRate;
+
         const fullPurchase: OriginalPurchased = {
             id: purchaseId,
             date: formData.date,
@@ -224,15 +242,15 @@ const OriginalPurchaseFormInternal: React.FC<PurchasesModuleProps> = ({ showNoti
             subSupplierId: formData.subSupplierId || undefined,
             originalTypeId: formData.originalTypeId,
             originalProductId: formData.originalProductId || undefined,
-            quantityPurchased: Number(formData.quantityPurchased),
+            quantityPurchased: quantity,
             rate: Number(formData.rate),
             currency: formData.currency,
-            conversionRate: formData.conversionRate,
+            conversionRate: conversionRate,
             batchNumber: formData.batchNumber,
             containerNumber: formData.containerNumber,
             divisionId: formData.divisionId,
             subDivisionId: formData.subDivisionId,
-            discountSurcharge: Number(formData.discountSurcharge) || undefined,
+            discountSurcharge: netDiscountSurcharge !== 0 ? netDiscountSurcharge : undefined,
             
             freightForwarderId: formData.freightForwarderId,
             freightAmount: Number(formData.freightAmount) || undefined,
@@ -248,6 +266,9 @@ const OriginalPurchaseFormInternal: React.FC<PurchasesModuleProps> = ({ showNoti
             commissionAmount: Number(formData.commissionAmount) || undefined,
             commissionCurrency: commissionCurrencyData.currency,
             commissionConversionRate: commissionCurrencyData.conversionRate,
+
+            supplierServiceName: formData.supplierServiceName || undefined,
+            supplierServiceAmount: Number(formData.supplierServiceAmount) || undefined,
         };
 
         setPurchaseToSave(fullPurchase);
@@ -271,6 +292,37 @@ const OriginalPurchaseFormInternal: React.FC<PurchasesModuleProps> = ({ showNoti
         
         dispatch({ type: 'ADD_ENTITY', payload: { entity: 'journalEntries', data: purchaseDebit }});
         dispatch({ type: 'ADD_ENTITY', payload: { entity: 'journalEntries', data: supplierCredit }});
+
+        // Supplier Service Charge
+        if (purchaseToSave.supplierServiceAmount && purchaseToSave.supplierServiceAmount > 0) {
+            const serviceValueUSD = purchaseToSave.supplierServiceAmount * purchaseToSave.conversionRate;
+            const serviceDesc = `Additional Supplier Service: ${purchaseToSave.supplierServiceName || 'General Service'} from ${supplierName}`;
+            
+            const serviceDebit: JournalEntry = { 
+                id: `je-d-serv-${purchaseToSave.id}`, 
+                voucherId: `JV-${purchaseToSave.id}`, 
+                date: jeDate, 
+                entryType: JournalEntryType.Journal, 
+                account: 'EXP-004', // Included in Raw Material Purchase Cost
+                debit: serviceValueUSD, 
+                credit: 0, 
+                description: serviceDesc 
+            };
+            const serviceCredit: JournalEntry = { 
+                id: `je-c-serv-${purchaseToSave.id}`, 
+                voucherId: `JV-${purchaseToSave.id}`, 
+                date: jeDate, 
+                entryType: JournalEntryType.Journal, 
+                account: 'AP-001', 
+                debit: 0, 
+                credit: serviceValueUSD, 
+                description: serviceDesc, 
+                entityId: purchaseToSave.supplierId, 
+                entityType: 'supplier' 
+            };
+            dispatch({ type: 'ADD_ENTITY', payload: { entity: 'journalEntries', data: serviceDebit }});
+            dispatch({ type: 'ADD_ENTITY', payload: { entity: 'journalEntries', data: serviceCredit }});
+        }
 
          const costs = [
             { type: 'Freight', id: purchaseToSave.freightForwarderId, amount: purchaseToSave.freightAmount, currencyData: freightCurrencyData, account: 'EXP-005', entityType: 'freightForwarder' as const, name: state.freightForwarders.find(f=>f.id===purchaseToSave.freightForwarderId)?.name },
@@ -336,11 +388,15 @@ const OriginalPurchaseFormInternal: React.FC<PurchasesModuleProps> = ({ showNoti
                 <div>
                     <label className="block text-sm font-medium text-slate-700">Original Type</label>
                     <div className="flex space-x-1">
-                        <select name="originalTypeId" value={formData.originalTypeId} onChange={handleChange} className={inputClasses}>
-                            <option value="">Select Type</option>
-                            {state.originalTypes.map(ot => <option key={ot.id} value={ot.id}>{ot.name}</option>)}
-                        </select>
-                        <button type="button" onClick={() => onOpenSetup('originalTypes')} className="text-blue-600 hover:text-blue-800 font-bold px-2">+</button>
+                        <div className="flex-grow">
+                            <EntitySelector
+                                entities={state.originalTypes}
+                                selectedEntityId={formData.originalTypeId}
+                                onSelect={(id) => setFormData(prev => ({ ...prev, originalTypeId: id }))}
+                                placeholder="Search Original Type..."
+                            />
+                        </div>
+                        <button type="button" onClick={() => onOpenSetup('originalTypes')} className="text-blue-600 hover:text-blue-800 font-bold px-2" title="Add New Original Type">+</button>
                     </div>
                 </div>
                 <div>
@@ -370,7 +426,23 @@ const OriginalPurchaseFormInternal: React.FC<PurchasesModuleProps> = ({ showNoti
                     <div><label className="block text-sm font-medium text-slate-700">Container #</label><input type="text" name="containerNumber" value={formData.containerNumber} onChange={handleChange} className={`${inputClasses}`}/></div>
                     <div><label className="block text-sm font-medium text-slate-700">Division</label><select name="divisionId" value={formData.divisionId} onChange={handleChange} className={`${inputClasses}`}><option value="">Select Division</option>{state.divisions.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}</select></div>
                     <div><label className="block text-sm font-medium text-slate-700">Sub Division</label><select name="subDivisionId" value={formData.subDivisionId} onChange={handleChange} disabled={!formData.divisionId || availableSubDivisions.length === 0} className={`${inputClasses}`}><option value="">Select Sub-Division</option>{availableSubDivisions.map(sd => <option key={sd.id} value={sd.id}>{sd.name}</option>)}</select></div>
-                    <div><label className="block text-sm font-medium text-slate-700">Discount(-) / Surcharge(+)</label><input type="number" name="discountSurcharge" step="0.01" value={formData.discountSurcharge} onChange={handleChange} className={`${inputClasses}`} placeholder="Amount in USD"/></div>
+                    <div>
+                        <label className="block text-sm font-medium text-slate-700">Discount Rate ($/Unit)</label>
+                        <input type="number" name="discountRate" step="0.01" value={formData.discountRate} onChange={handleChange} className={`${inputClasses}`} placeholder="0.00" />
+                    </div>
+                    <div>
+                        <label className="block text-sm font-medium text-slate-700">Surcharge Rate ($/Unit)</label>
+                        <input type="number" name="surchargeRate" step="0.01" value={formData.surchargeRate} onChange={handleChange} className={`${inputClasses}`} placeholder="0.00" />
+                    </div>
+                    {/* New Supplier Service Inputs */}
+                    <div>
+                        <label className="block text-sm font-medium text-slate-700">Supplier Service (Name)</label>
+                        <input type="text" name="supplierServiceName" value={formData.supplierServiceName} onChange={handleChange} className={`${inputClasses}`} placeholder="e.g., Freight Service" />
+                    </div>
+                    <div>
+                        <label className="block text-sm font-medium text-slate-700">Service Charges ({formData.currency})</label>
+                        <input type="number" name="supplierServiceAmount" step="0.01" value={formData.supplierServiceAmount} onChange={handleChange} className={`${inputClasses}`} placeholder="0.00" />
+                    </div>
                 </div>
             </div>
 
@@ -378,19 +450,28 @@ const OriginalPurchaseFormInternal: React.FC<PurchasesModuleProps> = ({ showNoti
                 <h3 className="text-lg font-semibold text-slate-800 mb-4 border-b pb-2">Additional Cost</h3>
                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                     <div className="space-y-2">
-                        <label className="block text-sm font-medium text-slate-700">Freight Forwarder</label>
+                        <div className="flex justify-between items-center">
+                            <label className="block text-sm font-medium text-slate-700">Freight Forwarder</label>
+                            <button type="button" onClick={() => onOpenSetup('freightForwarders')} className="text-xs text-blue-600 hover:underline">not found? Add new</button>
+                        </div>
                         <select name="freightForwarderId" value={formData.freightForwarderId} onChange={handleChange} className={`w-full p-2 rounded-md`}><option value="">Select...</option>{state.freightForwarders.map(ff => <option key={ff.id} value={ff.id}>{ff.name}</option>)}</select>
                         <input type="number" name="freightAmount" placeholder="Freight Amount" value={formData.freightAmount} onChange={handleChange} disabled={isFreightDisabled} className={`w-full p-2 rounded-md`} />
                         <CurrencyInput value={freightCurrencyData} onChange={setFreightCurrencyData} disabled={isFreightDisabled} />
                     </div>
                     <div className="space-y-2">
-                        <label className="block text-sm font-medium text-slate-700">Clearing Agent</label>
+                        <div className="flex justify-between items-center">
+                            <label className="block text-sm font-medium text-slate-700">Clearing Agent</label>
+                            <button type="button" onClick={() => onOpenSetup('clearingAgents')} className="text-xs text-blue-600 hover:underline">not found? Add new</button>
+                        </div>
                         <select name="clearingAgentId" value={formData.clearingAgentId} onChange={handleChange} className={`w-full p-2 rounded-md`}><option value="">Select...</option>{state.clearingAgents.map(ca => <option key={ca.id} value={ca.id}>{ca.name}</option>)}</select>
                         <input type="number" name="clearingAmount" placeholder="Clearing Amount" value={formData.clearingAmount} onChange={handleChange} disabled={isClearingDisabled} className={`w-full p-2 rounded-md`} />
                         <CurrencyInput value={clearingCurrencyData} onChange={setClearingCurrencyData} disabled={isClearingDisabled} />
                     </div>
                     <div className="space-y-2">
-                        <label className="block text-sm font-medium text-slate-700">Commission Agent</label>
+                        <div className="flex justify-between items-center">
+                            <label className="block text-sm font-medium text-slate-700">Commission Agent</label>
+                            <button type="button" onClick={() => onOpenSetup('commissionAgents')} className="text-xs text-blue-600 hover:underline">not found? Add new</button>
+                        </div>
                         <select name="commissionAgentId" value={formData.commissionAgentId} onChange={handleChange} className={`w-full p-2 rounded-md`}><option value="">Select...</option>{state.commissionAgents.map(ca => <option key={ca.id} value={ca.id}>{ca.name}</option>)}</select>
                         <input type="number" name="commissionAmount" placeholder="Commission Amount" value={formData.commissionAmount} onChange={handleChange} disabled={isCommissionDisabled} className={`w-full p-2 rounded-md`} />
                         <CurrencyInput value={commissionCurrencyData} onChange={setCommissionCurrencyData} disabled={isCommissionDisabled} />

@@ -11,7 +11,6 @@ import EntitySelector from './ui/EntitySelector.tsx';
 interface SalesInvoiceProps {
     setModule: (module: Module) => void;
     userProfile: UserProfile | null;
-    onOpenSetup?: (target: string) => void;
 }
 
 const CollapsibleSection: React.FC<{ title: string; children: React.ReactNode; defaultOpen?: boolean }> = ({ title, children, defaultOpen = false }) => {
@@ -79,8 +78,9 @@ const PrintableInvoiceContent: React.FC<{ invoice: SalesInvoice | null; state: A
     const freightInUSD = (invoice.freightAmount || 0) * (invoice.freightConversionRate || 1);
     const clearingInUSD = (invoice.customCharges || 0) * (invoice.customChargesConversionRate || 1);
     const commissionInUSD = (invoice.commissionAmount || 0) * (invoice.commissionConversionRate || 1);
+    const discountSurcharge = invoice.discountSurcharge || 0;
     
-    const grandTotal = itemsTotal + freightInUSD + clearingInUSD + commissionInUSD;
+    const grandTotal = itemsTotal + freightInUSD + clearingInUSD + commissionInUSD + discountSurcharge;
     const currency = invoice.items.length > 0 ? (invoice.items[0].currency || Currency.Dollar) : Currency.Dollar;
 
     return (
@@ -143,6 +143,12 @@ const PrintableInvoiceContent: React.FC<{ invoice: SalesInvoice | null; state: A
                             <td className="p-2 text-right text-slate-800">{commissionInUSD.toFixed(2)}</td>
                         </tr>
                     )}
+                    {invoice.discountSurcharge && (
+                        <tr className="font-medium">
+                            <td colSpan={3} className="p-2 text-right text-slate-800">Discount / Surcharge</td>
+                            <td className="p-2 text-right text-slate-800">{invoice.discountSurcharge.toFixed(2)}</td>
+                        </tr>
+                    )}
                     <tr className="font-bold bg-slate-100">
                         <td colSpan={3} className="p-2 text-right text-slate-800">Grand Total ({currency})</td>
                         <td className="p-2 text-right text-slate-800">{grandTotal.toFixed(2)}</td>
@@ -163,7 +169,7 @@ const PrintableInvoiceContent: React.FC<{ invoice: SalesInvoice | null; state: A
     );
 };
 
-const SalesInvoiceModule: React.FC<SalesInvoiceProps> = ({ setModule, userProfile, onOpenSetup }) => {
+const SalesInvoiceModule: React.FC<SalesInvoiceProps> = ({ setModule, userProfile }) => {
     const { state, dispatch } = useData();
     const [customerId, setCustomerId] = useState('');
     const [invoiceId, setInvoiceId] = useState('');
@@ -785,12 +791,7 @@ const SalesInvoiceModule: React.FC<SalesInvoiceProps> = ({ setModule, userProfil
                 <div className="space-y-4">
                     <div className="grid grid-cols-1 md:grid-cols-5 gap-4 items-end p-4 border rounded-md bg-white">
                         <div className="md:col-span-1">
-                            <div className="flex justify-between">
-                                <label className="block text-sm font-medium text-slate-700">Customer</label>
-                                {onOpenSetup && (
-                                    <button type="button" onClick={() => onOpenSetup('customers')} className="text-xs text-blue-600 hover:underline">Not found? Add new</button>
-                                )}
-                            </div>
+                            <label className="block text-sm font-medium text-slate-700">Customer</label>
                             <EntitySelector
                                 entities={state.customers}
                                 selectedEntityId={customerId}

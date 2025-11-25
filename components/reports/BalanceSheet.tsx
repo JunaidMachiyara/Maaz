@@ -42,8 +42,9 @@ const BalanceSheet: React.FC<BalanceSheetProps> = ({ onNavigate }) => {
             const clearingUSD = (p.clearingAmount || 0) * (p.clearingConversionRate || 1);
             const commissionUSD = (p.commissionAmount || 0) * (p.commissionConversionRate || 1);
             const discountSurchargeUSD = p.discountSurcharge || 0;
+            const supplierServiceUSD = (p.supplierServiceAmount || 0) * (p.conversionRate || 1); // ADDED: Supplier Service
 
-            const purchaseCostUSD = itemValueUSD + freightUSD + clearingUSD + commissionUSD + discountSurchargeUSD;
+            const purchaseCostUSD = itemValueUSD + freightUSD + clearingUSD + commissionUSD + discountSurchargeUSD + supplierServiceUSD;
             
             if (!costMap[p.originalTypeId]) {
                 costMap[p.originalTypeId] = { totalKg: 0, totalCost: 0 };

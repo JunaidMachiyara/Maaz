@@ -79,8 +79,9 @@ const OriginalCombinationReport: React.FC = () => {
              const clearingUSD = convertToUSD(p.clearingAmount || 0, p.clearingCurrency || Currency.Dollar, p.clearingConversionRate || 1);
              const commissionUSD = convertToUSD(p.commissionAmount || 0, p.commissionCurrency || Currency.Dollar, p.commissionConversionRate || 1);
              const discountSurchargeUSD = p.discountSurcharge || 0;
+             const supplierServiceUSD = (p.supplierServiceAmount || 0) * (p.conversionRate || 1); // ADDED
 
-             const totalCostUSD = itemValueUSD + freightUSD + clearingUSD + commissionUSD + discountSurchargeUSD;
+             const totalCostUSD = itemValueUSD + freightUSD + clearingUSD + commissionUSD + discountSurchargeUSD + supplierServiceUSD;
 
              if (!globalTotals[p.originalTypeId]) globalTotals[p.originalTypeId] = { qty: 0, cost: 0 };
              globalTotals[p.originalTypeId].qty += qty;
@@ -122,8 +123,9 @@ const OriginalCombinationReport: React.FC = () => {
                 const clearingUSD = convertToUSD(p.clearingAmount || 0, p.clearingCurrency || Currency.Dollar, p.clearingConversionRate || 1);
                 const commissionUSD = convertToUSD(p.commissionAmount || 0, p.commissionCurrency || Currency.Dollar, p.commissionConversionRate || 1);
                 const discountSurchargeUSD = p.discountSurcharge || 0;
+                const supplierServiceUSD = (p.supplierServiceAmount || 0) * (p.conversionRate || 1); // ADDED
 
-                const totalCostUSD = itemValueUSD + freightUSD + clearingUSD + commissionUSD + discountSurchargeUSD;
+                const totalCostUSD = itemValueUSD + freightUSD + clearingUSD + commissionUSD + discountSurchargeUSD + supplierServiceUSD;
 
                 if (!inventoryState[p.originalTypeId]) {
                     inventoryState[p.originalTypeId] = { currentQty: 0, currentValue: 0 };

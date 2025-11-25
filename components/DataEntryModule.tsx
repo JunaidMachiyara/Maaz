@@ -255,7 +255,10 @@ const OriginalOpeningForm: React.FC<{ showNotification: (msg: string, type?: 'su
                     const clearingUSD = (p.clearingAmount || 0) * (p.clearingConversionRate || 1);
                     const commissionUSD = (p.commissionAmount || 0) * (p.commissionConversionRate || 1);
                     const discountSurchargeUSD = p.discountSurcharge || 0;
-                    const landedCostUSD = itemValueUSD + freightUSD + clearingUSD + commissionUSD + discountSurchargeUSD;
+                    // Include Supplier Service Amount in Landed Cost
+                    const supplierServiceUSD = (p.supplierServiceAmount || 0) * (p.conversionRate || 1);
+
+                    const landedCostUSD = itemValueUSD + freightUSD + clearingUSD + commissionUSD + discountSurchargeUSD + supplierServiceUSD;
                     
                     totalCostUSD += landedCostUSD;
                     totalKgAvailable += purchaseKg;
@@ -2024,7 +2027,7 @@ const DataEntryModule: React.FC<DataEntryProps> = ({ setModule, onOpenSetup, use
                 );
             case 'production': return <ProductionForm showNotification={showNotification} requestSetupItem={() => onOpenSetup('items')} userProfile={userProfile} />;
             case 'purchases': return <PurchasesModule showNotification={showNotification} userProfile={userProfile} onOpenSetup={onOpenSetup} />;
-            case 'sales': return <SalesInvoiceModule setModule={setModule} userProfile={userProfile} onOpenSetup={onOpenSetup} />;
+            case 'sales': return <SalesInvoiceModule setModule={setModule} userProfile={userProfile} />;
             case 'ongoing': return <OngoingOrdersModule setModule={setModule} userProfile={userProfile} />;
             case 'rebaling': return <RebalingForm showNotification={showNotification} userProfile={userProfile} />;
             case 'directSales': return <DirectSalesForm showNotification={showNotification} userProfile={userProfile} />;
