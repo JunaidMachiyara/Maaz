@@ -258,7 +258,7 @@ const App: React.FC = () => {
     const unreadMessageCount = useUnreadMessageCount(userProfile);
 
 
-    const [isNewItemModalOpen, setIsNewItemModalOpen] = useState<boolean>(false);
+    const [setupModalTarget, setSetupModalTarget] = useState<string | null>(null);
     const [isHelpModalOpen, setIsHelpModalOpen] = useState(false);
     const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false); // Mobile Menu State
 
@@ -463,9 +463,9 @@ const App: React.FC = () => {
         };
     }, [navigationHistory, showEscapeConfirm]);
 
-    const handleNewItemSaved = () => {
-        setNotification({ msg: "Item created successfully!", type: 'success' });
-        setIsNewItemModalOpen(false);
+    const handleEntitySaved = () => {
+        setNotification({ msg: "Entry saved successfully!", type: 'success' });
+        setSetupModalTarget(null);
     };
     
     useEffect(() => {
@@ -513,7 +513,7 @@ const App: React.FC = () => {
             case 'analytics': return <AnalyticsDashboard />;
             case 'dashboard': return <Dashboard setModule={(m, s) => handleNavigation(m, s)} />;
             case 'setup': return <SetupModule setModule={(m) => handleNavigation(m)} userProfile={userProfile} initialSection={activeSubView} />;
-            case 'dataEntry': return <DataEntryModule setModule={(m) => handleNavigation(m)} requestSetupItem={() => setIsNewItemModalOpen(true)} userProfile={userProfile} initialView={activeSubView} />;
+            case 'dataEntry': return <DataEntryModule setModule={(m) => handleNavigation(m)} onOpenSetup={(target) => setSetupModalTarget(target)} userProfile={userProfile} initialView={activeSubView} />;
             case 'accounting': return <AccountingModule userProfile={userProfile} initialView={activeSubView} />;
             case 'reports': return <ReportsModule userProfile={userProfile} initialReport={activeSubView} />;
             case 'posting': return <PostingModule setModule={(m) => handleNavigation(m)} userProfile={userProfile} />;
@@ -661,12 +661,12 @@ const App: React.FC = () => {
             <main className={isFullScreenModule ? "p-2 md:p-8" : "container mx-auto p-2 md:p-8"}>
                 {renderModule()}
             </main>
-            {isNewItemModalOpen && (
+            {setupModalTarget && (
                 <SetupModule
                     isModalMode={true}
-                    modalTarget="items"
-                    onModalClose={() => setIsNewItemModalOpen(false)}
-                    onModalSave={handleNewItemSaved}
+                    modalTarget={setupModalTarget}
+                    onModalClose={() => setSetupModalTarget(null)}
+                    onModalSave={handleEntitySaved}
                     userProfile={userProfile}
                 />
             )}

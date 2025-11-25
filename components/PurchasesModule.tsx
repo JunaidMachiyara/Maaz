@@ -47,9 +47,10 @@ type PurchaseView = 'original' | 'finishedGoods';
 interface PurchasesModuleProps {
     showNotification: (msg: string) => void;
     userProfile: UserProfile | null;
+    onOpenSetup: (target: string) => void;
 }
 
-const PurchasesModule: React.FC<PurchasesModuleProps> = ({ showNotification, userProfile }) => {
+const PurchasesModule: React.FC<PurchasesModuleProps> = ({ showNotification, userProfile, onOpenSetup }) => {
     const [view, setView] = useState<PurchaseView>('original');
 
     const getButtonClass = (v: PurchaseView) => 
@@ -64,14 +65,14 @@ const PurchasesModule: React.FC<PurchasesModuleProps> = ({ showNotification, use
             </div>
 
             <div>
-                {view === 'original' && <OriginalPurchaseFormInternal showNotification={showNotification} userProfile={userProfile} />}
+                {view === 'original' && <OriginalPurchaseFormInternal showNotification={showNotification} userProfile={userProfile} onOpenSetup={onOpenSetup} />}
                 {view === 'finishedGoods' && <FinishedGoodsPurchaseFormInternal showNotification={showNotification} userProfile={userProfile} />}
             </div>
         </div>
     );
 };
 
-const OriginalPurchaseFormInternal: React.FC<Omit<PurchasesModuleProps, 'selectedSupplierId'>> = ({ showNotification, userProfile }) => {
+const OriginalPurchaseFormInternal: React.FC<PurchasesModuleProps> = ({ showNotification, userProfile, onOpenSetup }) => {
     const { state, dispatch } = useData();
     const getInitialState = () => {
         const allBatchNumbers = [
@@ -325,8 +326,16 @@ const OriginalPurchaseFormInternal: React.FC<Omit<PurchasesModuleProps, 'selecte
                                 {availableSubSuppliers.map(ss => <option key={ss.id} value={ss.id}>{ss.name}</option>)}
                             </select>
                         </div>
-                        <div><label className="block text-sm font-medium text-slate-700">Batch Number</label><input type="text" name="batchNumber" value={formData.batchNumber} onChange={handleChange} disabled className={`${inputClasses} bg-slate-200`}/></div>
-                        <div><label className="block text-sm font-medium text-slate-700">Original Type</label><select name="originalTypeId" value={formData.originalTypeId} onChange={handleChange} required className={`${inputClasses}`}><option value="">Select Type</option>{state.originalTypes.map(ot => <option key={ot.id} value={ot.id}>{ot.name}</option>)}</select></div>
+                        <div><label className="block text-sm font-medium text-slate-700">Batch Number</label><input type="text" name="batchNumber" value={formData.batchNumber} onChange={handleChange} className={`${inputClasses}`}/></div>
+                        <div>
+                            <label className="block text-sm font-medium text-slate-700">Original Type</label>
+                            <EntitySelector
+                                entities={state.originalTypes}
+                                selectedEntityId={formData.originalTypeId || ''}
+                                onSelect={(id) => setFormData(prev => ({ ...prev, originalTypeId: id }))}
+                                placeholder="Search Type..."
+                            />
+                        </div>
                         <div>
                             <label className="block text-sm font-medium text-slate-700">Original Product</label>
                             <select name="originalProductId" value={formData.originalProductId} onChange={handleChange} disabled={!formData.originalTypeId || availableOriginalProducts.length === 0} className={`${inputClasses}`}>
@@ -361,7 +370,10 @@ const OriginalPurchaseFormInternal: React.FC<Omit<PurchasesModuleProps, 'selecte
                     <h3 className="text-lg font-semibold text-slate-800 mb-4 border-b pb-2">Additional Cost</h3>
                      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                         <div className="space-y-2">
-                            <label className="block text-sm font-medium text-slate-700">Freight Forwarder</label>
+                            <div className="flex justify-between">
+                                <label className="block text-sm font-medium text-slate-700">Freight Forwarder</label>
+                                <button type="button" onClick={() => onOpenSetup('freightForwarders')} className="text-xs text-blue-600 hover:underline">Not found? Add new</button>
+                            </div>
                             <select name="freightForwarderId" value={formData.freightForwarderId} onChange={handleChange} className={`w-full p-2 rounded-md`}>
                                 <option value="">Select...</option>
                                 {state.freightForwarders.map(ff => <option key={ff.id} value={ff.id}>{ff.name}</option>)}
@@ -370,7 +382,10 @@ const OriginalPurchaseFormInternal: React.FC<Omit<PurchasesModuleProps, 'selecte
                             <CurrencyInput value={freightCurrencyData} onChange={setFreightCurrencyData} disabled={isFreightDisabled} />
                         </div>
                         <div className="space-y-2">
-                            <label className="block text-sm font-medium text-slate-700">Clearing Agent</label>
+                            <div className="flex justify-between">
+                                <label className="block text-sm font-medium text-slate-700">Clearing Agent</label>
+                                <button type="button" onClick={() => onOpenSetup('clearingAgents')} className="text-xs text-blue-600 hover:underline">Not found? Add new</button>
+                            </div>
                             <select name="clearingAgentId" value={formData.clearingAgentId} onChange={handleChange} className={`w-full p-2 rounded-md`}>
                                 <option value="">Select...</option>
                                 {state.clearingAgents.map(ca => <option key={ca.id} value={ca.id}>{ca.name}</option>)}
@@ -379,7 +394,10 @@ const OriginalPurchaseFormInternal: React.FC<Omit<PurchasesModuleProps, 'selecte
                             <CurrencyInput value={clearingCurrencyData} onChange={setClearingCurrencyData} disabled={isClearingDisabled} />
                         </div>
                         <div className="space-y-2">
-                            <label className="block text-sm font-medium text-slate-700">Commission Agent</label>
+                            <div className="flex justify-between">
+                                <label className="block text-sm font-medium text-slate-700">Commission Agent</label>
+                                <button type="button" onClick={() => onOpenSetup('commissionAgents')} className="text-xs text-blue-600 hover:underline">Not found? Add new</button>
+                            </div>
                             <select name="commissionAgentId" value={formData.commissionAgentId} onChange={handleChange} className={`w-full p-2 rounded-md`}>
                                 <option value="">Select...</option>
                                 {state.commissionAgents.map(ca => <option key={ca.id} value={ca.id}>{ca.name}</option>)}

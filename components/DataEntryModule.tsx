@@ -794,8 +794,8 @@ const ProductionForm: React.FC<{
                     itemName: itemDetails?.name || 'N/A',
                     itemCategory: state.categories.find(c => c.id === itemDetails?.categoryId)?.name || 'N/A',
                 };
-            })
-            .sort((a, b) => (a.startBaleNumber || 0) - (b.startBaleNumber || 0));
+            });
+            // Removed sorting by bale number to preserve data entry order
     }, [formData.date, state.productions, state.items, state.categories]);
 
     const handleAddToList = (e: React.FormEvent) => {
@@ -1974,12 +1974,12 @@ type FormView = 'opening' | 'production' | 'purchases' | 'sales' | 'ongoing' | '
 
 interface DataEntryProps {
     setModule: (module: Module) => void;
-    requestSetupItem: () => void;
+    onOpenSetup: (target: string) => void;
     userProfile: UserProfile | null;
     initialView?: string | null;
 }
 
-const DataEntryModule: React.FC<DataEntryProps> = ({ setModule, requestSetupItem, userProfile, initialView }) => {
+const DataEntryModule: React.FC<DataEntryProps> = ({ setModule, onOpenSetup, userProfile, initialView }) => {
     const [view, setView] = useState<FormView>('opening');
     const [notification, setNotification] = useState<{message: string, type: 'success' | 'error'} | null>(null);
     const [openingView, setOpeningView] = useState<'original' | 'bales'>('original');
@@ -2022,8 +2022,8 @@ const DataEntryModule: React.FC<DataEntryProps> = ({ setModule, requestSetupItem
                         {openingView === 'bales' && <BalesOpeningForm showNotification={showNotification} userProfile={userProfile} />}
                     </div>
                 );
-            case 'production': return <ProductionForm showNotification={showNotification} requestSetupItem={requestSetupItem} userProfile={userProfile} />;
-            case 'purchases': return <PurchasesModule showNotification={showNotification} userProfile={userProfile} />;
+            case 'production': return <ProductionForm showNotification={showNotification} requestSetupItem={() => onOpenSetup('items')} userProfile={userProfile} />;
+            case 'purchases': return <PurchasesModule showNotification={showNotification} userProfile={userProfile} onOpenSetup={onOpenSetup} />;
             case 'sales': return <SalesInvoiceModule setModule={setModule} userProfile={userProfile} />;
             case 'ongoing': return <OngoingOrdersModule setModule={setModule} userProfile={userProfile} />;
             case 'rebaling': return <RebalingForm showNotification={showNotification} userProfile={userProfile} />;
