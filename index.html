@@ -122,9 +122,9 @@
       main input[type="password"],
       main select,
       main textarea {
-        background-color: #111827 !important; /* bg-gray-900 */
-        color: #f9fafb !important; /* text-gray-50 */
-        border: 1px solid #4b5563 !important; /* border-gray-600 */
+        background-color: #ffffff !important; /* White background */
+        color: #000000 !important; /* Black text */
+        border: 1px solid #d1d5db !important; /* border-gray-300 */
         border-radius: 0.375rem; /* rounded-md */
       }
       
@@ -142,10 +142,10 @@
       main input:disabled,
       main select:disabled,
       main textarea:disabled {
-        background-color: #374151 !important; /* bg-gray-700 */
+        background-color: #f3f4f6 !important; /* bg-gray-100 */
         color: #9ca3af !important; /* text-gray-400 */
         cursor: not-allowed;
-        border-color: #4b5563 !important;
+        border-color: #e5e7eb !important; /* border-gray-200 */
       }
 
       /* Placeholder Text Color */
@@ -154,9 +154,10 @@
         opacity: 1; /* Firefox */
       }
       
-      /* Make select dropdown arrow visible on dark background */
+      /* Make select dropdown arrow visible on light background */
       main select {
-        background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%239ca3af' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e");
+        /* Using darker gray stroke for arrow on white background */
+        background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%23374151' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e");
         background-position: right 0.5rem center;
         background-repeat: no-repeat;
         background-size: 1.5em 1.5em;
