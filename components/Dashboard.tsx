@@ -442,7 +442,13 @@ const Dashboard: React.FC<DashboardProps> = ({ setModule }) => {
             {/* Main Content Area */}
             <div className="flex-grow space-y-8">
                 <div>
-                    <h1 className="text-3xl font-bold text-slate-800">Dashboard Overview</h1>
+                    <h1 className="text-3xl font-bold text-slate-800 flex items-center">
+                        Dashboard Overview
+                        <span className="ml-4 flex items-center text-base font-semibold text-green-600">
+                            <span className="w-2.5 h-2.5 bg-green-500 rounded-full mr-2"></span>
+                            Active
+                        </span>
+                    </h1>
                     <p className="text-slate-500">Welcome back! Here's a snapshot of your business.</p>
                 </div>
 
